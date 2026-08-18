@@ -35,7 +35,7 @@ scripts externes. L'organisateur peut l'imprimer et le poser sur la table.
 1. Va sur le [dashboard développeur Spotify](https://developer.spotify.com/dashboard) → *Create app*.
    Un compte Spotify gratuit suffit.
 2. Dans les réglages de l'app, ajoute la **Redirect URI** correspondant à l'endroit où tu ouvres la page :
-   - GitHub Pages : `https://sebastienpingal.github.io/cehaki/`
+   - production Vercel : `https://<ton-projet>.vercel.app/`
    - en local : `http://127.0.0.1:4173/`
 
    Coche *Web API* comme API utilisée.
@@ -123,10 +123,22 @@ npm test        # tests de la logique de mélange
 
 Aucune dépendance, aucun build : du HTML/CSS/JS modules servis tels quels.
 
-### Publier sur GitHub Pages
+### Déployer
 
-*Settings → Pages → Source : GitHub Actions*. Le workflow `.github/workflows/pages.yml` déploie à
-chaque push sur `main`. Pense à ajouter l'URL publiée comme Redirect URI dans le dashboard Spotify.
+Le site est entièrement statique : aucun build, aucune variable d'environnement côté serveur. Sur
+Vercel, importe le dépôt et laisse les réglages par défaut (*Framework preset : Other*, pas de build
+command, *Output directory* : la racine).
+
+Ajoute ensuite l'URL de production comme **Redirect URI** dans le dashboard Spotify, avec le slash
+final :
+
+```
+https://<ton-projet>.vercel.app/
+```
+
+⚠️ Les *preview deployments* de Vercel reçoivent une URL différente à chaque commit, et Spotify
+compare les Redirect URI au caractère près : la connexion ne fonctionnera que depuis l'URL de
+production (ou depuis `http://127.0.0.1:4173/` en local, si tu l'as déclarée aussi).
 
 ## Comment se déroule une partie
 

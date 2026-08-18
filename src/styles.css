@@ -246,6 +246,21 @@ h2 .num {
 
 code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 4px; font-size: .85em; }
 
+.subhead { margin: 1.6rem 0 .25rem; font-size: 1rem; }
+
+.mixes { list-style: none; margin: .75rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+.mix {
+  display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  padding: .7rem .85rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+}
+.mix .meta { flex: 1 1 220px; min-width: 0; }
+.mix .sub { color: var(--muted); font-size: .78rem; margin-top: .2rem; }
+.mix.stale { border-color: #8a6d1f; }
+.mix.stale .sub { color: #e8c66a; }
+.mix-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.mix-actions .btn { padding: .35rem .7rem; font-size: .82rem; }
+
 /* ------------------------------------------------------- lecture en direct */
 
 .live {

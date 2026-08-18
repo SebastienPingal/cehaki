@@ -168,6 +168,14 @@
     </div>
     <ul id="sources" class="sources"></ul>
     <p id="sources-empty" class="hint">Aucune playlist pour l'instant.</p>
+
+    <h3 class="subhead">Playlists générées</h3>
+    <p class="hint">
+      Elles restent ici après un rafraîchissement de la page : inutile de remélanger. Si une playlist
+      de joueur arrive après coup, le mix concerné est signalé comme dépassé.
+    </p>
+    <ul id="mixes" class="mixes"></ul>
+    <p id="mixes-empty" class="hint">Aucune playlist générée pour l'instant.</p>
   </section>
 
   <!-- 4. réglages -->
@@ -237,20 +245,30 @@
     </div>
   </section>
 
-  <!-- 6. en direct -->
-  <section class="card" id="live-card">
-    <h2><span class="num">6</span> Pendant la soirée</h2>
-    <p class="hint">
-      Garde cet écran pour toi : il suit ce que joue ton compte Spotify et te dit, à chaque titre,
-      à qui il appartient. L'affichage se met à jour tout seul.
-    </p>
-    <div class="actions">
-      <button id="live-toggle" class="btn btn-primary">Suivre la lecture</button>
-      <label class="field checkbox">
-        <input id="live-auto-reveal" type="checkbox" />
-        <span>Révéler le propriétaire automatiquement <em>(sinon, un clic par morceau)</em></span>
+</section>
+
+<!-- ═════════════════════════════ SOIRÉE ═════════════════════════════ -->
+<section class="view hidden" id="view-soiree">
+  <a class="back" href="#/organisateur">← Espace organisateur</a>
+  <h1>Écran de soirée</h1>
+  <p class="lead">
+    Cet écran suit ce que joue ton compte Spotify et t'indique à qui appartient le morceau en cours.
+    Il se met à jour tout seul : garde-le ouvert pendant la partie.
+  </p>
+
+  <section class="card">
+    <div class="row">
+      <label class="field grow">
+        <span>Playlist suivie</span>
+        <select id="live-mix"></select>
       </label>
+      <button id="live-toggle" class="btn btn-primary">Suivre la lecture</button>
     </div>
+    <label class="field checkbox">
+      <input id="live-auto-reveal" type="checkbox" />
+      <span>Révéler le propriétaire automatiquement <em>(sinon, un clic par morceau)</em></span>
+    </label>
+
     <div id="live-panel" class="live hidden">
       <div class="live-track">
         <strong id="live-title">—</strong>
@@ -263,7 +281,22 @@
       </div>
       <div class="live-bar"><span id="live-progress"></span></div>
     </div>
-    <p id="live-status" class="feedback">Lance la playlist sur Spotify, puis clique sur « Suivre la lecture ».</p>
+    <p id="live-status" class="feedback">Choisis une playlist, lance-la sur Spotify, puis clique sur « Suivre la lecture ».</p>
+  </section>
+
+  <section class="card">
+    <h2>Le corrigé</h2>
+    <div class="actions">
+      <button id="live-toggle-answers" class="btn btn-ghost">Afficher les réponses</button>
+      <button id="live-csv" class="btn btn-ghost">Télécharger le corrigé (CSV)</button>
+      <a id="live-open" class="btn btn-primary" target="_blank" rel="noopener">Ouvrir la playlist</a>
+    </div>
+    <div class="table-wrap">
+      <table id="live-table" class="answers-hidden">
+        <thead><tr><th>#</th><th>Titre</th><th>Artiste</th><th>Durée</th><th class="answer">Joueur</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 </section>
 

@@ -7,6 +7,7 @@ import {
   getCurrentlyPlaying,
 } from "./spotify.js";
 import { buildAnswerKey, describeNowPlaying, nextPollDelay } from "./nowplaying.js";
+import { createEntry, insertEntry, removeEntry, describeFreshness, formatDate } from "./mixes.js";
 import { mix, formatDuration, toCsv } from "./mixer.js";
 import { runDiagnostic, summarize } from "./diagnostic.js";
 import { qrToSvg } from "./qr.js";
@@ -17,7 +18,7 @@ const CODE_KEY = "spm.sessionCode";
 const POLL_MS = 5000;
 const PARTY_KEY = "spm.party";
 const RETURN_KEY = "spm.return";
-const ANSWERS_KEY = "spm.answers";
+const MIXES_KEY = "spm.mixes";
 const LIVE_SCOPE = "user-read-currently-playing";
 const $ = (id) => document.getElementById(id);
 
@@ -27,6 +28,9 @@ let currentMix = null;
 let me = null;
 let pollTimer = null;
 let seenSubmissions = new Set();
+/** @type {Array<object>} playlists créées sur Spotify, mémorisées d'une session à l'autre */
+let mixes = [];
+let liveEntry = null;
 let answerKey = buildAnswerKey([]);
 let liveTimer = null;
 let liveTrackId = null;
@@ -55,7 +59,7 @@ async function copy(text, message) {
 
 /* --------------------------------------------------------------- routeur */
 
-const VIEWS = ["accueil", "organisateur", "joueur"];
+const VIEWS = ["accueil", "organisateur", "soiree", "joueur"];
 
 /** Découpe `#/joueur?jeu=Soirée` en nom de vue + paramètres. */
 function parseRoute() {
@@ -67,14 +71,19 @@ function parseRoute() {
 function showView() {
   const { name, params } = parseRoute();
   for (const view of VIEWS) $(`view-${view}`).classList.toggle("hidden", view !== name);
-  $("auth-zone").classList.toggle("hidden", name !== "organisateur");
+  $("auth-zone").classList.toggle("hidden", name !== "organisateur" && name !== "soiree");
   window.scrollTo(0, 0);
 
   if (name === "organisateur") {
     refreshInvite();
+    renderMixes();
     startPolling();
   } else {
     stopPolling();
+  }
+  if (name === "soiree") {
+    openLiveView(params.get("mix"));
+  } else {
     stopLive();
   }
   if (name === "joueur") {
@@ -97,18 +106,16 @@ function loadSavedSources() {
   }
 }
 
-function saveAnswerKey(tracks) {
-  const entries = tracks.map(({ id, sourceLabel, position }) => ({ id, sourceLabel, position }));
-  localStorage.setItem(ANSWERS_KEY, JSON.stringify(entries));
-  answerKey = buildAnswerKey(entries);
+function saveMixes() {
+  localStorage.setItem(MIXES_KEY, JSON.stringify(mixes));
 }
 
-function loadAnswerKey() {
+function loadMixes() {
   try {
-    const entries = JSON.parse(localStorage.getItem(ANSWERS_KEY) || "[]");
-    answerKey = buildAnswerKey(Array.isArray(entries) ? entries : []);
+    const stored = JSON.parse(localStorage.getItem(MIXES_KEY) || "[]");
+    mixes = Array.isArray(stored) ? stored.filter((entry) => entry?.id && Array.isArray(entry.tracks)) : [];
   } catch {
-    answerKey = buildAnswerKey([]);
+    mixes = [];
   }
 }
 
@@ -239,10 +246,61 @@ function renderSources() {
       sources = sources.filter((s) => s.key !== source.key);
       saveSources();
       renderSources();
+      renderMixes();
       refreshMixButton();
     });
     li.append(remove);
 
+    list.append(li);
+  }
+}
+
+function renderMixes() {
+  const list = $("mixes");
+  list.innerHTML = "";
+  $("mixes-empty").classList.toggle("hidden", mixes.length > 0);
+
+  for (const entry of mixes) {
+    const { upToDate, text } = describeFreshness(entry, readySources());
+    const li = document.createElement("li");
+    li.className = `mix ${upToDate ? "fresh" : "stale"}`;
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const title = document.createElement("strong");
+    title.textContent = entry.name;
+    const sub = document.createElement("div");
+    sub.className = "sub";
+    sub.textContent = `${formatDate(entry.createdAt)} · ${text}`;
+    meta.append(title, sub);
+
+    const actions = document.createElement("div");
+    actions.className = "mix-actions";
+
+    const live = document.createElement("a");
+    live.className = "btn btn-primary";
+    live.href = `#/soiree?mix=${entry.id}`;
+    live.textContent = "Écran de soirée";
+
+    const open = document.createElement("a");
+    open.className = "btn btn-ghost";
+    open.href = entry.url;
+    open.target = "_blank";
+    open.rel = "noopener";
+    open.textContent = "Spotify";
+
+    const remove = document.createElement("button");
+    remove.className = "btn btn-ghost";
+    remove.type = "button";
+    remove.textContent = "Oublier";
+    remove.addEventListener("click", () => {
+      mixes = removeEntry(mixes, entry.id);
+      saveMixes();
+      renderMixes();
+    });
+
+    actions.append(live, open, remove);
+    li.append(meta, actions);
     list.append(li);
   }
 }
@@ -255,10 +313,10 @@ function refreshMixButton() {
   $("mix-btn").disabled = readySources().length < 2 || !isLoggedIn();
 }
 
-function renderResult(result) {
-  const tbody = $("result-table").querySelector("tbody");
+function fillTrackTable(table, tracks) {
+  const tbody = table.querySelector("tbody");
   tbody.innerHTML = "";
-  for (const track of result.tracks) {
+  for (const track of tracks) {
     const tr = document.createElement("tr");
     const cells = [
       [track.position, ""],
@@ -275,6 +333,10 @@ function renderResult(result) {
     }
     tbody.append(tr);
   }
+}
+
+function renderResult(result) {
+  fillTrackTable($("result-table"), result.tracks);
   $("result-card").classList.remove("hidden");
 
   const repartition = result.perSource.filter((s) => s.count > 0).map((s) => `${s.label} ${s.count}`).join(" · ");
@@ -311,6 +373,7 @@ async function addPlaylistById(id, savedLabel) {
     source.error = error.message;
   }
   renderSources();
+  renderMixes();
   refreshMixButton();
 }
 
@@ -359,7 +422,6 @@ function handleMix() {
     toast("Aucun morceau retenu — vérifie les playlists.", true);
     return;
   }
-  saveAnswerKey(currentMix.tracks);
   renderResult(currentMix);
   $("create-btn").classList.remove("hidden");
   $("playlist-link").classList.add("hidden");
@@ -383,10 +445,26 @@ async function handleCreate() {
       isPublic: $("public-playlist").checked,
       uris: currentMix.tracks.map((t) => t.uri),
     });
+    const mixedIds = new Set(currentMix.perSource.filter((s) => s.count > 0).map((s) => s.key));
+    mixes = insertEntry(mixes, createEntry({
+      playlist,
+      name,
+      mix: currentMix,
+      sources: readySources().filter((source) => mixedIds.has(source.key)),
+      settings: {
+        mode: $("mode").value,
+        balance: $("balance").value,
+        dedupe: $("dedupe").checked,
+        spread: $("spread").checked,
+      },
+    }));
+    saveMixes();
+    renderMixes();
+
     const link = $("playlist-link");
     link.href = playlist.url;
     link.classList.remove("hidden");
-    toast("Playlist créée sur ton compte Spotify 🎉");
+    toast("Playlist créée et mémorisée 🎉 — retrouve-la sous les playlists reçues.");
   } catch (error) {
     toast(error.message, true);
   } finally {
@@ -395,14 +473,17 @@ async function handleCreate() {
   }
 }
 
-function handleDownloadCsv() {
-  if (!currentMix) return;
-  const blob = new Blob(["﻿" + toCsv(currentMix.tracks)], { type: "text/csv;charset=utf-8" });
+function downloadCsv(tracks, filename) {
+  const blob = new Blob(["﻿" + toCsv(tracks)], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = "corrige-blind-test.csv";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+function handleDownloadCsv() {
+  if (currentMix) downloadCsv(currentMix.tracks, "corrige-blind-test.csv");
 }
 
 /* ------------------------------------------------------------ diagnostic */
@@ -448,6 +529,42 @@ async function handleDiagnostic() {
 }
 
 /* ------------------------------------------------------ lecture en direct */
+
+/** Prépare l'écran de soirée : liste des playlists mémorisées, corrigé, suivi. */
+function openLiveView(requestedId) {
+  const select = $("live-mix");
+  select.innerHTML = "";
+  for (const entry of mixes) {
+    const option = document.createElement("option");
+    option.value = entry.id;
+    option.textContent = `${entry.name} — ${formatDate(entry.createdAt)}`;
+    select.append(option);
+  }
+
+  const entry = mixes.find((item) => item.id === requestedId) || mixes[0] || null;
+  if (!entry) {
+    select.classList.add("hidden");
+    setLiveStatus("Aucune playlist mémorisée : crée-en une depuis l'espace organisateur.", "ko");
+    $("live-panel").classList.add("hidden");
+    liveEntry = null;
+    answerKey = buildAnswerKey([]);
+    fillTrackTable($("live-table"), []);
+    return;
+  }
+  select.classList.remove("hidden");
+  select.value = entry.id;
+  selectMix(entry);
+}
+
+function selectMix(entry) {
+  stopLive();
+  liveEntry = entry;
+  answerKey = buildAnswerKey(entry.tracks);
+  fillTrackTable($("live-table"), entry.tracks);
+  $("live-open").href = entry.url;
+  setLiveStatus(`« ${entry.name} » — ${entry.tracks.length} morceaux. Lance-la sur Spotify.`);
+  if (isLoggedIn() && hasScope(LIVE_SCOPE)) startLive();
+}
 
 function setLiveStatus(message, kind = "") {
   const el = $("live-status");
@@ -514,7 +631,10 @@ async function liveTick() {
 
 function startLive() {
   if (liveTimer) return;
-  if (!isLoggedIn()) return toast("Connecte-toi à Spotify d'abord.", true);
+  if (!isLoggedIn()) {
+    setLiveStatus("Connecte-toi à Spotify pour lire ce qui joue.", "ko");
+    return;
+  }
   if (!hasScope(LIVE_SCOPE)) {
     setLiveStatus(
       "Il manque l'autorisation « lecture en cours » : déconnecte-toi puis reconnecte-toi à Spotify.",
@@ -523,7 +643,7 @@ function startLive() {
     return;
   }
   if (answerKey.total === 0) {
-    setLiveStatus("Fabrique d'abord le mix : c'est lui qui sert de corrigé.", "ko");
+    setLiveStatus("Choisis d'abord une playlist générée.", "ko");
     return;
   }
   liveTimer = setTimeout(liveTick, 0);
@@ -703,7 +823,18 @@ function wireEvents() {
   $("create-btn").addEventListener("click", handleCreate);
   $("download-csv").addEventListener("click", handleDownloadCsv);
   $("diag-run").addEventListener("click", handleDiagnostic);
+  $("live-mix").addEventListener("change", (event) => {
+    const entry = mixes.find((item) => item.id === event.target.value);
+    if (entry) selectMix(entry);
+  });
   $("live-toggle").addEventListener("click", () => (liveTimer ? stopLive() : startLive()));
+  $("live-toggle-answers").addEventListener("click", (event) => {
+    const hidden = $("live-table").classList.toggle("answers-hidden");
+    event.target.textContent = hidden ? "Afficher les réponses" : "Masquer les réponses";
+  });
+  $("live-csv").addEventListener("click", () => {
+    if (liveEntry) downloadCsv(liveEntry.tracks, `corrige-${liveEntry.name}.csv`);
+  });
   $("live-reveal").addEventListener("click", () => setRevealed(!revealed));
   $("live-auto-reveal").addEventListener("change", (event) => {
     if (event.target.checked) setRevealed(true);
@@ -747,7 +878,7 @@ async function start() {
     $("client-id-ready").hidden = false;
   }
   $("invite-name").value = localStorage.getItem(PARTY_KEY) || "";
-  loadAnswerKey();
+  loadMixes();
   if (!navigator.share) $("invite-share").classList.add("hidden");
   else $("invite-share").classList.remove("hidden");
   wireEvents();

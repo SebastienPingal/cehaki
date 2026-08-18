@@ -32,8 +32,12 @@ scripts externes. L'organisateur peut l'imprimer et le poser sur la table.
 - Deux morceaux du même joueur ne se suivent pas (dans la mesure où les quotas le permettent).
 - Création de la playlist dans ton compte Spotify, publique ou privée.
 - **Corrigé** consultable, masquable et exportable en CSV.
-- **Suivi en direct** : pendant la soirée, l'app lit le morceau que joue ton compte Spotify et
-  affiche son propriétaire, révélé au clic ou automatiquement. L'affichage se met à jour tout seul.
+- **Playlists générées mémorisées** : une fois créée sur Spotify, la playlist reste listée sous les
+  playlists reçues, avec son corrigé. Un rafraîchissement de la page ne fait plus tout perdre.
+- Chaque playlist générée sait **quelles playlists de joueurs elle mélange** : si une nouvelle arrive
+  après coup, le mix est signalé comme dépassé (« ⚠️ 1 playlist reçue depuis (Chloé) »).
+- **Écran de soirée** dédié (`#/soiree`) : suit le morceau que joue ton compte Spotify et affiche son
+  propriétaire, masqué puis révélé au clic ou automatiquement. L'affichage se met à jour tout seul.
 
 ## Mise en route (5 minutes)
 
@@ -179,8 +183,9 @@ production (ou depuis `http://127.0.0.1:4173/` en local, si tu l'as déclarée a
 4. Tu crées la playlist, tu la lances **sans lecture aléatoire** (l'ordre est déjà mélangé, et le
    corrigé suit cet ordre).
 5. À chaque morceau, chacun écrit son pari. Le corrigé CSV sert de feuille de score.
-6. Garde l'écran *Pendant la soirée* sous les yeux : il suit la lecture en cours et te donne le
-   propriétaire du titre joué, sans chercher la ligne dans le corrigé.
+6. Ouvre l'**écran de soirée** depuis la playlist générée : il suit la lecture en cours et te donne le
+   propriétaire du titre joué, sans chercher la ligne dans le corrigé. Si un retardataire envoie sa
+   playlist, l'espace organisateur signale que le mix ne la contient pas — remélange et recrée.
 
 Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 
@@ -193,6 +198,7 @@ Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 | `src/spotify.js` | appels Web API (endpoints `/items` et `/me/playlists` post-migration 2026) : lecture paginée, création, ajout par lots de 100 |
 | `src/mixer.js` | logique pure du mélange (quotas pondérés, anti-répétition, doublons) |
 | `src/nowplaying.js` | logique pure du suivi en direct (corrigé indexé, cadence de sondage) |
+| `src/mixes.js` | logique pure des playlists générées (fiche, historique, détection des mix dépassés) |
 | `src/diagnostic.js` | teste une à une les permissions réelles de l'app Spotify |
 | `src/qr.js` | encodeur QR autonome (mode octet, correction M, versions 1 à 10) |
 | `src/session.js` | dépôt et relève des playlists côté navigateur |

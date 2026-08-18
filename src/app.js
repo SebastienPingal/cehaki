@@ -1,8 +1,12 @@
 import {
   getClientId, setClientId, getRedirectUri, login, logout,
-  isLoggedIn, handleRedirect, getRefreshToken, hasBuiltInClientId,
+  isLoggedIn, handleRedirect, getRefreshToken, hasBuiltInClientId, hasScope,
 } from "./auth.js";
-import { parsePlaylistId, parseSubmissionLine, fetchPlaylist, getCurrentUser, createPlaylist } from "./spotify.js";
+import {
+  parsePlaylistId, parseSubmissionLine, fetchPlaylist, getCurrentUser, createPlaylist,
+  getCurrentlyPlaying,
+} from "./spotify.js";
+import { buildAnswerKey, describeNowPlaying, nextPollDelay } from "./nowplaying.js";
 import { mix, formatDuration, toCsv } from "./mixer.js";
 import { runDiagnostic, summarize } from "./diagnostic.js";
 import { qrToSvg } from "./qr.js";
@@ -13,6 +17,8 @@ const CODE_KEY = "spm.sessionCode";
 const POLL_MS = 5000;
 const PARTY_KEY = "spm.party";
 const RETURN_KEY = "spm.return";
+const ANSWERS_KEY = "spm.answers";
+const LIVE_SCOPE = "user-read-currently-playing";
 const $ = (id) => document.getElementById(id);
 
 /** @type {Array<{key:string,id:string,label:string,name:string,owner:string,image:string,url:string,tracks:Array,status:string,error?:string}>} */
@@ -21,6 +27,10 @@ let currentMix = null;
 let me = null;
 let pollTimer = null;
 let seenSubmissions = new Set();
+let answerKey = buildAnswerKey([]);
+let liveTimer = null;
+let liveTrackId = null;
+let revealed = false;
 
 /* ---------------------------------------------------------------- toasts */
 
@@ -65,6 +75,7 @@ function showView() {
     startPolling();
   } else {
     stopPolling();
+    stopLive();
   }
   if (name === "joueur") {
     const party = params.get("jeu");
@@ -83,6 +94,21 @@ function loadSavedSources() {
     return JSON.parse(localStorage.getItem(SOURCES_KEY) || "[]");
   } catch {
     return [];
+  }
+}
+
+function saveAnswerKey(tracks) {
+  const entries = tracks.map(({ id, sourceLabel, position }) => ({ id, sourceLabel, position }));
+  localStorage.setItem(ANSWERS_KEY, JSON.stringify(entries));
+  answerKey = buildAnswerKey(entries);
+}
+
+function loadAnswerKey() {
+  try {
+    const entries = JSON.parse(localStorage.getItem(ANSWERS_KEY) || "[]");
+    answerKey = buildAnswerKey(Array.isArray(entries) ? entries : []);
+  } catch {
+    answerKey = buildAnswerKey([]);
   }
 }
 
@@ -333,6 +359,7 @@ function handleMix() {
     toast("Aucun morceau retenu — vérifie les playlists.", true);
     return;
   }
+  saveAnswerKey(currentMix.tracks);
   renderResult(currentMix);
   $("create-btn").classList.remove("hidden");
   $("playlist-link").classList.add("hidden");
@@ -418,6 +445,100 @@ async function handleDiagnostic() {
     button.disabled = false;
     button.textContent = "Lancer le diagnostic";
   }
+}
+
+/* ------------------------------------------------------ lecture en direct */
+
+function setLiveStatus(message, kind = "") {
+  const el = $("live-status");
+  el.className = `feedback ${kind}`;
+  el.textContent = message;
+}
+
+function setRevealed(value) {
+  revealed = value;
+  const owner = $("live-owner");
+  owner.classList.toggle("masked", !value && !owner.classList.contains("unknown"));
+  $("live-reveal").textContent = value ? "Masquer" : "Révéler";
+}
+
+function renderLive(now) {
+  const panel = $("live-panel");
+  if (now.state === "idle" || now.state === "other") {
+    panel.classList.add("hidden");
+    setLiveStatus(now.message);
+    liveTrackId = null;
+    return;
+  }
+  panel.classList.remove("hidden");
+
+  // Nouveau morceau : on remasque la réponse, sauf si la révélation auto est cochée.
+  if (now.id !== liveTrackId) {
+    liveTrackId = now.id;
+    setRevealed($("live-auto-reveal").checked);
+  }
+
+  $("live-title").textContent = now.title;
+  $("live-artists").textContent = now.artists;
+  $("live-position").textContent =
+    now.known ? `morceau ${now.position} sur ${now.total}` : "hors du mix";
+
+  const owner = $("live-owner");
+  owner.classList.toggle("unknown", !now.known);
+  owner.textContent = now.known ? now.owner || "sans étiquette" : "Ce titre n'est pas dans le corrigé.";
+  $("live-reveal").classList.toggle("hidden", !now.known);
+  if (!now.known) owner.classList.remove("masked");
+  else setRevealed(revealed);
+
+  const ratio = now.durationMs > 0 ? Math.min(1, now.progressMs / now.durationMs) : 0;
+  $("live-progress").style.width = `${(ratio * 100).toFixed(1)}%`;
+  setLiveStatus(
+    now.state === "paused" ? "Lecture en pause." : "Suivi en cours — l'affichage se met à jour tout seul.",
+    now.state === "paused" ? "" : "ok",
+  );
+}
+
+async function liveTick() {
+  let playback;
+  try {
+    playback = await getCurrentlyPlaying();
+  } catch (error) {
+    stopLive();
+    setLiveStatus(`Suivi interrompu : ${error.message}`, "ko");
+    return;
+  }
+  const now = describeNowPlaying(playback, answerKey);
+  renderLive(now);
+  liveTimer = setTimeout(liveTick, nextPollDelay(now));
+}
+
+function startLive() {
+  if (liveTimer) return;
+  if (!isLoggedIn()) return toast("Connecte-toi à Spotify d'abord.", true);
+  if (!hasScope(LIVE_SCOPE)) {
+    setLiveStatus(
+      "Il manque l'autorisation « lecture en cours » : déconnecte-toi puis reconnecte-toi à Spotify.",
+      "ko",
+    );
+    return;
+  }
+  if (answerKey.total === 0) {
+    setLiveStatus("Fabrique d'abord le mix : c'est lui qui sert de corrigé.", "ko");
+    return;
+  }
+  liveTimer = setTimeout(liveTick, 0);
+  $("live-toggle").textContent = "Arrêter le suivi";
+  setLiveStatus("Recherche du morceau en cours…");
+}
+
+function stopLive() {
+  if (!liveTimer) return;
+  clearTimeout(liveTimer);
+  liveTimer = null;
+  liveTrackId = null;
+  $("live-toggle").textContent = "Suivre la lecture";
+  $("live-panel").classList.add("hidden");
+  setLiveStatus("Suivi arrêté.");
 }
 
 /* ---------------------------------------------------------------- joueur */
@@ -582,6 +703,11 @@ function wireEvents() {
   $("create-btn").addEventListener("click", handleCreate);
   $("download-csv").addEventListener("click", handleDownloadCsv);
   $("diag-run").addEventListener("click", handleDiagnostic);
+  $("live-toggle").addEventListener("click", () => (liveTimer ? stopLive() : startLive()));
+  $("live-reveal").addEventListener("click", () => setRevealed(!revealed));
+  $("live-auto-reveal").addEventListener("change", (event) => {
+    if (event.target.checked) setRevealed(true);
+  });
   $("toggle-answers").addEventListener("click", (event) => {
     const hidden = $("result-table").classList.toggle("answers-hidden");
     event.target.textContent = hidden ? "Afficher les réponses" : "Masquer les réponses";
@@ -621,6 +747,7 @@ async function start() {
     $("client-id-ready").hidden = false;
   }
   $("invite-name").value = localStorage.getItem(PARTY_KEY) || "";
+  loadAnswerKey();
   if (!navigator.share) $("invite-share").classList.add("hidden");
   else $("invite-share").classList.remove("hidden");
   wireEvents();

@@ -77,6 +77,14 @@ export function getCurrentUser() {
   return api("/me");
 }
 
+/**
+ * Morceau en cours de lecture sur le compte connecté.
+ * Renvoie null quand rien ne joue (Spotify répond 204).
+ */
+export function getCurrentlyPlaying() {
+  return api("/me/player/currently-playing?additional_types=track");
+}
+
 /** Métadonnées + tous les morceaux jouables d'une playlist publique. */
 export async function fetchPlaylist(playlistId) {
   const meta = await api(`/playlists/${playlistId}?fields=id,name,owner(display_name),images,external_urls`);

@@ -246,6 +246,27 @@ h2 .num {
 
 code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 4px; font-size: .85em; }
 
+/* ------------------------------------------------------- lecture en direct */
+
+.live {
+  margin-top: .9rem; padding: 1rem 1.1rem;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
+  display: flex; flex-direction: column; gap: .75rem;
+}
+.live-track { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem .75rem; }
+.live-track strong { font-size: 1.25rem; }
+.live-artists { color: var(--muted); }
+.live-position { color: var(--muted); font-size: .85rem; margin-left: auto; }
+.live-owner { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.owner {
+  font-size: 1.5rem; font-weight: 700; color: var(--accent);
+  padding: .2rem .8rem; border-radius: 8px; background: rgba(29, 185, 84, .12);
+}
+.owner.masked { color: transparent; text-shadow: 0 0 .7rem var(--muted); user-select: none; }
+.owner.unknown { color: var(--muted); background: none; font-size: 1rem; font-weight: 500; }
+.live-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.live-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s linear; }
+
 @media print {
   .topbar, .back, .actions, .hint, .field, h2 .num { display: none !important; }
   body { background: #fff; color: #000; }

@@ -8,7 +8,12 @@ import { CLIENT_ID as BUILT_IN_CLIENT_ID } from "./config.js";
 
 const AUTH_URL = "https://accounts.spotify.com/authorize";
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
-const SCOPES = ["playlist-modify-public", "playlist-modify-private"];
+const SCOPES = [
+  "playlist-modify-public",
+  "playlist-modify-private",
+  // Pour afficher, pendant la soirée, le morceau en cours et son propriétaire.
+  "user-read-currently-playing",
+];
 
 export function getRedirectUri() {
   return location.origin + location.pathname;
@@ -58,6 +63,7 @@ function writeToken(data) {
   const stored = {
     access_token: data.access_token,
     refresh_token: data.refresh_token || readToken()?.refresh_token,
+    scope: data.scope || readToken()?.scope || "",
     expires_at: Date.now() + (data.expires_in ?? 3600) * 1000 - 30_000,
   };
   localStorage.setItem(TOKEN_KEY, JSON.stringify(stored));
@@ -67,6 +73,13 @@ function writeToken(data) {
 /** Jeton de rafraîchissement brut — pour déboguer en ligne de commande. */
 export function getRefreshToken() {
   return readToken()?.refresh_token || null;
+}
+
+/** Vrai si le jeton courant porte ce droit — un jeton d'avant l'ajout d'un scope ne l'a pas. */
+export function hasScope(scope) {
+  const granted = readToken()?.scope;
+  if (!granted) return false;
+  return granted.split(" ").includes(scope);
 }
 
 export function isLoggedIn() {

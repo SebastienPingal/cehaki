@@ -236,6 +236,35 @@
       </table>
     </div>
   </section>
+
+  <!-- 6. en direct -->
+  <section class="card" id="live-card">
+    <h2><span class="num">6</span> Pendant la soirée</h2>
+    <p class="hint">
+      Garde cet écran pour toi : il suit ce que joue ton compte Spotify et te dit, à chaque titre,
+      à qui il appartient. L'affichage se met à jour tout seul.
+    </p>
+    <div class="actions">
+      <button id="live-toggle" class="btn btn-primary">Suivre la lecture</button>
+      <label class="field checkbox">
+        <input id="live-auto-reveal" type="checkbox" />
+        <span>Révéler le propriétaire automatiquement <em>(sinon, un clic par morceau)</em></span>
+      </label>
+    </div>
+    <div id="live-panel" class="live hidden">
+      <div class="live-track">
+        <strong id="live-title">—</strong>
+        <span id="live-artists" class="live-artists"></span>
+        <span id="live-position" class="live-position"></span>
+      </div>
+      <div class="live-owner">
+        <span id="live-owner" class="owner masked">?</span>
+        <button id="live-reveal" class="btn btn-ghost">Révéler</button>
+      </div>
+      <div class="live-bar"><span id="live-progress"></span></div>
+    </div>
+    <p id="live-status" class="feedback">Lance la playlist sur Spotify, puis clique sur « Suivre la lecture ».</p>
+  </section>
 </section>
 
 <!-- ═════════════════════════════ JOUEUR ═════════════════════════════ -->

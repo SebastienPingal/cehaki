@@ -53,6 +53,23 @@ La page inclut un **diagnostic** (section 0, « qu'est-ce que mon app a le droit
 ces limites sur ton propre compte : lecture de tes playlists, lecture d'une playlist d'autrui, création,
 ajout de morceaux. En dix secondes tu sais si tu dois passer par une copie manuelle ou non.
 
+### Tester la piste « token d'application »
+
+Le flow **Client Credentials** (client ID + secret, sans utilisateur connecté) est une autre porte
+d'entrée : sans « current user », la restriction ci-dessus n'a plus de sujet. C'est ainsi que
+fonctionne [GuessSong](https://github.com/Waynting/GuessSong), qui importe des playlists publiques
+sans jamais faire signer les joueurs. Reste à savoir si ça tient pour une app récente en mode
+développement — ce script le dit :
+
+```bash
+SPOTIFY_CLIENT_ID=xxx SPOTIFY_CLIENT_SECRET=yyy \
+  npm run check:credentials -- https://open.spotify.com/playlist/…   # playlist d'un ami
+```
+
+Si les morceaux remontent, un petit backend (fonction serverless gardant le secret) supprime toute
+copie manuelle : lecture des playlists par token d'application, création de la playlist finale par
+ton login utilisateur. Sinon, la contrainte est structurelle et il faut posséder les playlists.
+
 **Conséquence pratique** : ne demande pas aux joueurs le lien de leur playlist. Crée à la place une
 playlist **collaborative** par joueur depuis ton propre compte, envoie-leur le lien, et laisse-les y
 déposer leurs morceaux. Les playlists t'appartiennent, l'app peut donc les lire, et les joueurs n'ont

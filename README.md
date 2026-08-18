@@ -66,14 +66,29 @@ SPOTIFY_CLIENT_ID=xxx SPOTIFY_CLIENT_SECRET=yyy \
   npm run check:credentials -- https://open.spotify.com/playlist/…   # playlist d'un ami
 ```
 
-Si les morceaux remontent, un petit backend (fonction serverless gardant le secret) supprime toute
-copie manuelle : lecture des playlists par token d'application, création de la playlist finale par
-ton login utilisateur. Sinon, la contrainte est structurelle et il faut posséder les playlists.
+**Résultat du test (août 2026, app neuve en mode développement)** — la piste est fermée :
 
-**Conséquence pratique** : ne demande pas aux joueurs le lien de leur playlist. Crée à la place une
-playlist **collaborative** par joueur depuis ton propre compte, envoie-leur le lien, et laisse-les y
-déposer leurs morceaux. Les playlists t'appartiennent, l'app peut donc les lire, et les joueurs n'ont
-ni compte développeur ni connexion à faire.
+| Appel avec un token d'application | Résultat |
+|---|---|
+| `GET /playlists/{id}` (métadonnées) | ✅ 200 |
+| `GET /playlists/{id}/items` | ❌ 401 — *Valid user authentication required* |
+| `GET /playlists/{id}/tracks` | ❌ 403 — *Forbidden* |
+
+Un token d'application donne le nom, le propriétaire et la pochette, jamais le contenu. Et une fois
+passé en token utilisateur, la règle « propriétaire ou collaborateur » reprend la main. Les projets
+qui lisent encore librement les playlists publiques tournent en *Extended Quota Mode*, hérité d'avant
+les changements de 2025-2026.
+
+**Conséquence pratique** : joue la carte « collaborateur », que la doc autorise explicitement. Chaque
+joueur ouvre sa playlist → *Inviter des collaborateurs* → t'envoie le lien d'invitation ; tu cliques,
+tu deviens collaborateur, et l'app lit la playlist sans rien copier. Dix secondes par joueur, aucune
+connexion ni compte développeur de leur côté.
+
+Deux replis si l'invitation collaborative ne convient pas :
+
+- **dupliquer** la playlist dans ton compte (Spotify desktop : Ctrl+A → clic droit → *Ajouter à la
+  playlist* → *Nouvelle playlist*) — tu deviens propriétaire de la copie ;
+- **créer toi-même** une playlist collaborative par joueur et les laisser la remplir.
 
 ### En local
 

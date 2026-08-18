@@ -32,7 +32,9 @@ export async function api(path, options = {}, attempt = 0) {
           : "Refusé par Spotify (403) — en mode développement, une app ne peut lire que les playlists dont tu es propriétaire ou collaborateur.",
       );
     }
-    throw new Error(data?.error?.message || `Erreur Spotify (${response.status}).`);
+    const error = new Error(data?.error?.message || `Erreur Spotify (${response.status}).`);
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
@@ -83,6 +85,60 @@ export function getCurrentUser() {
  */
 export function getCurrentlyPlaying() {
   return api("/me/player/currently-playing?additional_types=track");
+}
+
+/* ------------------------------------------------------ télécommande ---- */
+// Piloter la lecture demande un compte Premium ; Spotify répond 403 sinon, et
+// 404 quand aucun appareil n'est actif (il faut alors ouvrir Spotify quelque part).
+
+const withDevice = (path, deviceId) => (deviceId ? `${path}${path.includes("?") ? "&" : "?"}device_id=${encodeURIComponent(deviceId)}` : path);
+
+/** Appareils sur lesquels le compte peut jouer, l'actif d'abord repérable par `is_active`. */
+export async function getDevices() {
+  const data = await api("/me/player/devices");
+  return (data?.devices || []).map((device) => ({
+    id: device.id,
+    name: device.name,
+    type: device.type,
+    active: Boolean(device.is_active),
+  }));
+}
+
+/**
+ * Lance ou reprend la lecture. Avec `playlistId`, démarre cette playlist —
+ * éventuellement à un morceau donné (`offset`, index à partir de 0).
+ */
+export function play({ deviceId, playlistId, offset } = {}) {
+  const body = {};
+  if (playlistId) {
+    body.context_uri = `spotify:playlist:${playlistId}`;
+    if (Number.isInteger(offset) && offset >= 0) body.offset = { position: offset };
+  }
+  return api(withDevice("/me/player/play", deviceId), {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function pause({ deviceId } = {}) {
+  return api(withDevice("/me/player/pause", deviceId), { method: "PUT" });
+}
+
+export function nextTrack({ deviceId } = {}) {
+  return api(withDevice("/me/player/next", deviceId), { method: "POST" });
+}
+
+export function previousTrack({ deviceId } = {}) {
+  return api(withDevice("/me/player/previous", deviceId), { method: "POST" });
+}
+
+/**
+ * Arrêt : Spotify n'a pas de « stop ». On met en pause et on revient au début
+ * du morceau, pour que la reprise ne tombe pas au milieu d'un refrain.
+ */
+export async function stopPlayback({ deviceId } = {}) {
+  await pause({ deviceId });
+  await api(withDevice("/me/player/seek?position_ms=0", deviceId), { method: "PUT" }).catch(() => {});
 }
 
 /** Métadonnées + tous les morceaux jouables d'une playlist publique. */

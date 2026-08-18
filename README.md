@@ -17,6 +17,9 @@ et on devine **à qui appartient chaque morceau**. L'app garde le corrigé de so
 - **Espace joueur** (`#/joueur`) — la marche à suivre pour préparer sa playlist et la renvoyer en deux
   clics, sans connexion ni compte développeur. L'organisateur partage ce lien, éventuellement nommé :
   `#/joueur?jeu=Soirée%20du%2012`.
+- **Écran de vote** (`#/vote?s=CODE`) — l'écran de chaque joueur pendant la partie : le morceau en
+  cours, un bouton par joueur, son propre score. Il se partage lui aussi par lien ou QR code, depuis
+  l'écran de soirée.
 
 Le QR code est généré à la volée par `src/qr.js`, sans aucune dépendance : la page interdit les
 scripts externes. L'organisateur peut l'imprimer et le poser sur la table.
@@ -38,6 +41,13 @@ scripts externes. L'organisateur peut l'imprimer et le poser sur la table.
   après coup, le mix est signalé comme dépassé (« ⚠️ 1 playlist reçue depuis (Chloé) »).
 - **Écran de soirée** dédié (`#/soiree`) : suit le morceau que joue ton compte Spotify et affiche son
   propriétaire, masqué puis révélé au clic ou automatiquement. L'affichage se met à jour tout seul.
+- **Télécommande** sur l'écran de soirée : lancer la playlist, pause, précédent, suivant, stop, avec
+  choix de l'appareil Spotify — sans quitter la page. (Compte **Premium** requis : Spotify réserve le
+  pilotage de la lecture aux abonnés, et il faut un appareil sur lequel Spotify est ouvert.)
+- **Vote des joueurs** : à chaque morceau, l'écran de soirée publie le tour ; les téléphones affichent
+  le titre et un bouton par joueur. L'organisateur voit **qui a voté**, jamais **ce qu'il a voté** —
+  les paris ne ressortent jamais du serveur. Chaque joueur suit son propre score, calculé chez lui à
+  partir des morceaux révélés.
 
 ## Mise en route (5 minutes)
 
@@ -149,6 +159,11 @@ le signale, et les joueurs retombent sur l'envoi manuel du message `Alice — ht
 
 Les dépôts expirent au bout de 14 jours, une session accepte 40 playlists.
 
+Le même stockage porte le **tour en cours** et les **votes** : une clé `round:CODE` pour le morceau
+joué, une clé `votes:CODE:TOUR` par morceau. La réponse n'est jointe au tour qu'une fois le morceau
+révélé par l'organisateur — avant, elle ne quitte pas son écran. Et l'API ne renvoie jamais le contenu
+d'un vote : `GET /api/party` ne rend que les prénoms des votants.
+
 ### Variables d'environnement
 
 Ajoute la variable d'environnement du projet (*Settings → Environment Variables*) :
@@ -183,9 +198,13 @@ production (ou depuis `http://127.0.0.1:4173/` en local, si tu l'as déclarée a
 4. Tu crées la playlist, tu la lances **sans lecture aléatoire** (l'ordre est déjà mélangé, et le
    corrigé suit cet ordre).
 5. À chaque morceau, chacun écrit son pari. Le corrigé CSV sert de feuille de score.
-6. Ouvre l'**écran de soirée** depuis la playlist générée : il suit la lecture en cours et te donne le
-   propriétaire du titre joué, sans chercher la ligne dans le corrigé. Si un retardataire envoie sa
-   playlist, l'espace organisateur signale que le mix ne la contient pas — remélange et recrée.
+6. Ouvre l'**écran de soirée** depuis la playlist générée : il suit la lecture en cours, te donne le
+   propriétaire du titre joué, et te laisse piloter la lecture (lancer, pause, suivant, stop). Si un
+   retardataire envoie sa playlist, l'espace organisateur signale que le mix ne la contient pas —
+   remélange et recrée.
+7. Fais scanner le **QR code des votes** : chacun ouvre l'écran de vote sur son téléphone et parie à
+   chaque morceau. Tu vois les prénoms se cocher au fur et à mesure ; quand tout le monde a voté, tu
+   révèles — la réponse s'affiche alors aussi sur leurs téléphones, avec leur score.
 
 Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 
@@ -198,6 +217,10 @@ Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 | `src/spotify.js` | appels Web API (endpoints `/items` et `/me/playlists` post-migration 2026) : lecture paginée, création, ajout par lots de 100 |
 | `src/mixer.js` | logique pure du mélange (quotas pondérés, anti-répétition, doublons) |
 | `src/nowplaying.js` | logique pure du suivi en direct (corrigé indexé, cadence de sondage) |
+| `src/voting.js` | logique pure des votes (tour publié, votants, score) |
+| `src/party.js` | publication du tour et dépôt des votes côté navigateur |
+| `api/party.js` | fonction serverless : le tour en cours (`POST` publie, `GET` lit) et la liste des votants |
+| `api/vote.js` | fonction serverless : le pari d'un joueur, qui n'en ressort jamais |
 | `src/mixes.js` | logique pure des playlists générées (fiche, historique, détection des mix dépassés) |
 | `src/diagnostic.js` | teste une à une les permissions réelles de l'app Spotify |
 | `src/qr.js` | encodeur QR autonome (mode octet, correction M, versions 1 à 10) |
@@ -209,6 +232,8 @@ Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 | `test/mixer.test.mjs` | tests du mélange (`node --test`) |
 | `test/qr.test.mjs` | empreintes de référence des matrices QR |
 | `test/parsing.test.mjs` | lecture des liens et des envois des joueurs |
+| `test/voting.test.mjs` | tours de vote, votants, score |
+| `test/party.test.mjs` | API du tour et des votes, secret des paris compris |
 
 Le mélange utilise une file d'attente pondérée : chaque joueur annonce la « date » de son prochain
 morceau — `(déjà pris + 1) / poids` — et le plus tôt passe. Les quotas sont donc respectés à tout
@@ -216,8 +241,11 @@ moment de la playlist, pas seulement à la fin, ce qui permet de couper où on v
 
 ## Vie privée
 
-Aucun serveur, aucune donnée envoyée ailleurs que chez Spotify. Le Client ID, les jetons et la liste
-des playlists restent dans le `localStorage` de ton navigateur.
+Le Client ID, les jetons et la liste des playlists restent dans le `localStorage` de ton navigateur ;
+rien ne part ailleurs que chez Spotify. Les seules données qui transitent par le stockage de session
+sont les prénoms des joueurs, les liens de playlists qu'ils envoient, le morceau en cours pendant la
+soirée et leurs votes — ces derniers ne sont jamais relus par personne, l'API n'en expose que le
+prénom du votant. Tout expire au bout de 14 jours.
 
 ## Licence
 

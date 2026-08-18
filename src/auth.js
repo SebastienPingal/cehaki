@@ -13,6 +13,9 @@ const SCOPES = [
   "playlist-modify-private",
   // Pour afficher, pendant la soirée, le morceau en cours et son propriétaire.
   "user-read-currently-playing",
+  // Pour piloter la lecture depuis l'écran de soirée (lecture, pause, suivant…).
+  "user-read-playback-state",
+  "user-modify-playback-state",
 ];
 
 export function getRedirectUri() {

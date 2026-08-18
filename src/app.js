@@ -4,7 +4,7 @@ import {
 } from "./auth.js";
 import {
   parsePlaylistId, parseSubmissionLine, fetchPlaylist, getCurrentUser, createPlaylist,
-  getCurrentlyPlaying,
+  getCurrentlyPlaying, getDevices, play, pause, nextTrack, previousTrack, stopPlayback,
 } from "./spotify.js";
 import { buildAnswerKey, describeNowPlaying, nextPollDelay } from "./nowplaying.js";
 import { createEntry, insertEntry, removeEntry, describeFreshness, formatDate } from "./mixes.js";
@@ -12,6 +12,8 @@ import { mix, formatDuration, toCsv } from "./mixer.js";
 import { runDiagnostic, summarize } from "./diagnostic.js";
 import { qrToSvg } from "./qr.js";
 import { generateCode, submitPlaylist, fetchSubmissions } from "./session.js";
+import { buildRound, sameRound, describeVoters, scoreVotes } from "./voting.js";
+import { publishRound, fetchRound, castVote } from "./party.js";
 
 const SOURCES_KEY = "spm.sources";
 const CODE_KEY = "spm.sessionCode";
@@ -20,6 +22,11 @@ const PARTY_KEY = "spm.party";
 const RETURN_KEY = "spm.return";
 const MIXES_KEY = "spm.mixes";
 const LIVE_SCOPE = "user-read-currently-playing";
+const CONTROL_SCOPE = "user-modify-playback-state";
+const VOTERS_POLL_MS = 3000;
+const VOTE_POLL_MS = 3000;
+const VOTE_NAME_KEY = "spm.voteName";
+const VOTE_HISTORY_KEY = "spm.voteHistory";
 const $ = (id) => document.getElementById(id);
 
 /** @type {Array<{key:string,id:string,label:string,name:string,owner:string,image:string,url:string,tracks:Array,status:string,error?:string}>} */
@@ -35,6 +42,16 @@ let answerKey = buildAnswerKey([]);
 let liveTimer = null;
 let liveTrackId = null;
 let revealed = false;
+/** Dernier état de lecture affiché : sert à republier le tour au moment de la révélation. */
+let liveNow = null;
+/** Compteur de morceaux joués : deux passages du même titre restent deux tours distincts. */
+let liveSequence = 0;
+let publishedRound = null;
+let votersTimer = null;
+/** Écran de vote (côté joueur). */
+let voteTimer = null;
+let voteRound = null;
+let voteHistory = {};
 
 /* ---------------------------------------------------------------- toasts */
 
@@ -59,7 +76,7 @@ async function copy(text, message) {
 
 /* --------------------------------------------------------------- routeur */
 
-const VIEWS = ["accueil", "organisateur", "soiree", "joueur"];
+const VIEWS = ["accueil", "organisateur", "soiree", "joueur", "vote"];
 
 /** Découpe `#/joueur?jeu=Soirée` en nom de vue + paramètres. */
 function parseRoute() {
@@ -85,6 +102,11 @@ function showView() {
     openLiveView(params.get("mix"));
   } else {
     stopLive();
+  }
+  if (name === "vote") {
+    openVoteView(params);
+  } else {
+    stopVote();
   }
   if (name === "joueur") {
     const party = params.get("jeu");
@@ -135,6 +157,25 @@ function playerUrl() {
   const query = new URLSearchParams({ s: sessionCode() });
   if (party) query.set("jeu", party);
   return `${getRedirectUri()}#/joueur?${query}`;
+}
+
+/** Lien du vote : le code de session voyage dedans, comme pour l'invitation. */
+function voteUrl(code = sessionCode(), name = "") {
+  const party = localStorage.getItem(PARTY_KEY) || "";
+  const query = new URLSearchParams({ s: code });
+  if (party) query.set("jeu", party);
+  if (name) query.set("n", name);
+  return `${getRedirectUri()}#/vote?${query}`;
+}
+
+function refreshVoteInvite() {
+  const url = voteUrl();
+  $("vote-link").value = url;
+  try {
+    $("vote-qr").innerHTML = qrToSvg(url, { size: 200 });
+  } catch (error) {
+    $("vote-qr").textContent = error.message;
+  }
 }
 
 function refreshInvite() {
@@ -541,6 +582,9 @@ function openLiveView(requestedId) {
     select.append(option);
   }
 
+  refreshVoteInvite();
+  refreshDevices();
+
   const entry = mixes.find((item) => item.id === requestedId) || mixes[0] || null;
   if (!entry) {
     select.classList.add("hidden");
@@ -559,6 +603,10 @@ function openLiveView(requestedId) {
 function selectMix(entry) {
   stopLive();
   liveEntry = entry;
+  liveSequence = 0;
+  publishedRound = null;
+  liveNow = null;
+  renderVoters([], null);
   answerKey = buildAnswerKey(entry.tracks);
   fillTrackTable($("live-table"), entry.tracks);
   $("live-open").href = entry.url;
@@ -577,10 +625,13 @@ function setRevealed(value) {
   const owner = $("live-owner");
   owner.classList.toggle("masked", !value && !owner.classList.contains("unknown"));
   $("live-reveal").textContent = value ? "Masquer" : "Révéler";
+  shareRound();
 }
 
 function renderLive(now) {
   const panel = $("live-panel");
+  liveNow = now;
+  setToggleLabel(now.state === "playing");
   if (now.state === "idle" || now.state === "other") {
     panel.classList.add("hidden");
     setLiveStatus(now.message);
@@ -589,9 +640,11 @@ function renderLive(now) {
   }
   panel.classList.remove("hidden");
 
-  // Nouveau morceau : on remasque la réponse, sauf si la révélation auto est cochée.
+  // Nouveau morceau : on remasque la réponse, sauf si la révélation auto est cochée,
+  // et on ouvre un tour de vote — deux passages du même titre restent distincts.
   if (now.id !== liveTrackId) {
     liveTrackId = now.id;
+    liveSequence += 1;
     setRevealed($("live-auto-reveal").checked);
   }
 
@@ -613,6 +666,7 @@ function renderLive(now) {
     now.state === "paused" ? "Lecture en pause." : "Suivi en cours — l'affichage se met à jour tout seul.",
     now.state === "paused" ? "" : "ok",
   );
+  shareRound();
 }
 
 async function liveTick() {
@@ -647,18 +701,345 @@ function startLive() {
     return;
   }
   liveTimer = setTimeout(liveTick, 0);
+  startVotersPolling();
   $("live-toggle").textContent = "Arrêter le suivi";
   setLiveStatus("Recherche du morceau en cours…");
 }
 
 function stopLive() {
+  stopVotersPolling();
   if (!liveTimer) return;
   clearTimeout(liveTimer);
   liveTimer = null;
   liveTrackId = null;
+  liveNow = null;
   $("live-toggle").textContent = "Suivre la lecture";
   $("live-panel").classList.add("hidden");
   setLiveStatus("Suivi arrêté.");
+}
+
+/* ------------------------------------------------------- télécommande */
+
+function setCtlStatus(message, kind = "") {
+  const el = $("ctl-status");
+  el.className = `feedback ${kind}`;
+  el.textContent = message;
+}
+
+function setToggleLabel(playing) {
+  $("ctl-toggle").textContent = playing ? "⏸ Pause" : "▶︎ Lecture";
+}
+
+/** Appareil choisi dans la liste, ou l'appareil actif du compte si aucun n'est choisi. */
+function currentDeviceId() {
+  return $("live-device").value || undefined;
+}
+
+async function refreshDevices() {
+  const select = $("live-device");
+  if (!isLoggedIn() || !hasScope(CONTROL_SCOPE)) {
+    select.innerHTML = "";
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Appareil actif";
+    select.append(option);
+    return;
+  }
+  const previous = select.value;
+  try {
+    const devices = await getDevices();
+    select.innerHTML = "";
+    const auto = document.createElement("option");
+    auto.value = "";
+    auto.textContent = devices.length === 0 ? "Aucun appareil — ouvre Spotify quelque part" : "Appareil actif";
+    select.append(auto);
+    for (const device of devices) {
+      const option = document.createElement("option");
+      option.value = device.id;
+      option.textContent = `${device.name} (${device.type})${device.active ? " — actif" : ""}`;
+      select.append(option);
+    }
+    select.value = devices.some((device) => device.id === previous) ? previous : "";
+  } catch (error) {
+    setCtlStatus(`Liste des appareils indisponible : ${error.message}`, "ko");
+  }
+}
+
+/** Traduit les refus de Spotify les plus fréquents sur la télécommande. */
+function controlMessage(error) {
+  if (error.status === 404) {
+    return "Aucun appareil actif : ouvre Spotify sur l'appareil de la soirée, lance n'importe quoi, puis « Rafraîchir ».";
+  }
+  if (error.status === 403) {
+    return `Spotify refuse la commande — piloter la lecture demande un compte Premium. (${error.message})`;
+  }
+  return error.message;
+}
+
+/** Exécute une commande de lecture, puis rafraîchit l'affichage sans attendre le prochain sondage. */
+async function control(run, done) {
+  if (!isLoggedIn()) return setCtlStatus("Connecte-toi à Spotify d'abord.", "ko");
+  if (!hasScope(CONTROL_SCOPE)) {
+    return setCtlStatus(
+      "Il manque l'autorisation de pilotage : déconnecte-toi puis reconnecte-toi à Spotify.",
+      "ko",
+    );
+  }
+  try {
+    await run({ deviceId: currentDeviceId() });
+    setCtlStatus(done, "ok");
+    if (liveTimer) {
+      clearTimeout(liveTimer);
+      liveTimer = setTimeout(liveTick, 700);
+    }
+  } catch (error) {
+    setCtlStatus(controlMessage(error), "ko");
+  }
+}
+
+function wireControls() {
+  $("device-refresh").addEventListener("click", refreshDevices);
+  $("ctl-start").addEventListener("click", () => {
+    if (!liveEntry) return setCtlStatus("Choisis d'abord une playlist générée.", "ko");
+    liveSequence = 0;
+    control(
+      (options) => play({ ...options, playlistId: liveEntry.id, offset: 0 }),
+      `« ${liveEntry.name} » démarre au premier morceau.`,
+    );
+  });
+  $("ctl-toggle").addEventListener("click", () => {
+    const playing = liveNow?.state === "playing";
+    if (playing) control(pause, "En pause.");
+    else control(play, "Lecture reprise.");
+    setToggleLabel(!playing);
+  });
+  $("ctl-prev").addEventListener("click", () => control(previousTrack, "Morceau précédent."));
+  $("ctl-next").addEventListener("click", () => control(nextTrack, "Morceau suivant."));
+  $("ctl-stop").addEventListener("click", () => control(stopPlayback, "Arrêté, morceau remis à son début."));
+}
+
+/* ------------------------------------------------------------ les votes */
+
+function setVoteProgress(message, kind = "") {
+  const el = $("vote-progress");
+  el.className = `feedback ${kind}`;
+  el.textContent = message;
+}
+
+/** Affiche qui a voté — et seulement cela : les paris ne quittent jamais le serveur. */
+function renderVoters(voters, round) {
+  const list = $("vote-voters");
+  list.innerHTML = "";
+  if (!round) {
+    setVoteProgress("En attente du premier morceau.");
+    return;
+  }
+  const status = describeVoters(voters, round.players);
+  for (const player of round.players) {
+    const li = document.createElement("li");
+    const done = !status.waiting.includes(player);
+    li.className = `voter ${done ? "done" : "waiting"}`;
+    li.textContent = `${done ? "✅" : "…"} ${player}`;
+    list.append(li);
+  }
+  for (const name of status.extra) {
+    const li = document.createElement("li");
+    li.className = "voter done extra";
+    li.textContent = `✅ ${name} (hors liste)`;
+    list.append(li);
+  }
+  setVoteProgress(
+    status.complete ? `${status.text} — tout le monde a voté 🎉` : `${status.text} — on attend encore.`,
+    status.complete ? "ok" : "",
+  );
+}
+
+/**
+ * Publie le morceau en cours pour les téléphones des joueurs. Sans effet tant que
+ * rien n'a changé : le même tour n'est jamais republié deux fois.
+ */
+async function shareRound() {
+  if (!liveEntry || !liveNow || !liveNow.known) return;
+  const round = buildRound({ entry: liveEntry, now: liveNow, sequence: liveSequence, revealed });
+  if (sameRound(round, publishedRound)) return;
+  publishedRound = round;
+  try {
+    const data = await publishRound(sessionCode(), round);
+    renderVoters(data.voters, round);
+  } catch (error) {
+    publishedRound = null;
+    setVoteProgress(
+      error.status === 503
+        ? "Vote en ligne indisponible : le stockage n'est pas configuré."
+        : `Publication du tour impossible : ${error.message}`,
+      "ko",
+    );
+  }
+}
+
+async function pollVoters() {
+  if (!publishedRound) return;
+  try {
+    const data = await fetchRound(sessionCode());
+    if (data.round && data.round.id === publishedRound.id) renderVoters(data.voters, publishedRound);
+  } catch {
+    // Sondage silencieux : l'échec de publication a déjà son message.
+  }
+}
+
+function startVotersPolling() {
+  if (votersTimer) return;
+  votersTimer = setInterval(pollVoters, VOTERS_POLL_MS);
+}
+
+function stopVotersPolling() {
+  clearInterval(votersTimer);
+  votersTimer = null;
+}
+
+/* ------------------------------------------------------- écran de vote */
+
+function loadVoteHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(VOTE_HISTORY_KEY) || "{}");
+    voteHistory = stored && typeof stored === "object" ? stored : {};
+  } catch {
+    voteHistory = {};
+  }
+}
+
+function saveVoteHistory() {
+  localStorage.setItem(VOTE_HISTORY_KEY, JSON.stringify(voteHistory));
+}
+
+function setVoteFeedback(message, kind = "") {
+  const el = $("vote-feedback");
+  el.className = `feedback ${kind}`;
+  el.textContent = message;
+}
+
+function renderVoteScore() {
+  const { right, judged } = scoreVotes(Object.values(voteHistory));
+  $("vote-score").className = "feedback";
+  $("vote-score").textContent = judged === 0
+    ? "Aucun morceau révélé pour l'instant."
+    : `${right} bonne${right > 1 ? "s" : ""} réponse${right > 1 ? "s" : ""} sur ${judged} morceau${judged > 1 ? "x" : ""} révélé${judged > 1 ? "s" : ""}.`;
+}
+
+/** Boutons de vote : un par joueur, celui déjà choisi reste en évidence. */
+function renderVoteChoices(round) {
+  const box = $("vote-choices");
+  box.innerHTML = "";
+  const mine = voteHistory[round.id]?.guess || "";
+  for (const player of round.players) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `choice-btn${mine === player ? " picked" : ""}`;
+    button.textContent = player;
+    button.disabled = round.revealed;
+    button.addEventListener("click", () => sendVote(round, player));
+    box.append(button);
+  }
+}
+
+function renderVoteRound(round) {
+  $("vote-track-title").textContent = round.title || "Morceau en cours";
+  $("vote-track-artists").textContent = round.artists || "";
+  $("vote-track-position").textContent = round.total ? `morceau ${round.position} sur ${round.total}` : "";
+  renderVoteChoices(round);
+
+  const answer = $("vote-answer");
+  const mine = voteHistory[round.id]?.guess || "";
+  if (round.revealed && round.answer) {
+    const right = mine && mine.toLowerCase() === round.answer.toLowerCase();
+    answer.className = `vote-answer ${mine ? (right ? "right" : "wrong") : ""}`;
+    answer.textContent = mine
+      ? `C'était ${round.answer} — ${right ? "bien vu 🎉" : `tu avais dit ${mine}.`}`
+      : `C'était ${round.answer}. Tu n'avais pas voté.`;
+    answer.classList.remove("hidden");
+    if (voteHistory[round.id] && voteHistory[round.id].answer !== round.answer) {
+      voteHistory[round.id].answer = round.answer;
+      saveVoteHistory();
+    }
+    renderVoteScore();
+  } else {
+    answer.classList.add("hidden");
+    if (mine) setVoteFeedback(`Vote enregistré : ${mine}. Tu peux encore changer d'avis.`, "ok");
+    else setVoteFeedback("À toi : à qui appartient ce morceau ?");
+  }
+}
+
+async function sendVote(round, guess) {
+  const name = $("vote-name").value.trim();
+  if (!name) return setVoteFeedback("Mets ton prénom d'abord, sinon l'organisateur ne saura pas que tu as voté.", "ko");
+  localStorage.setItem(VOTE_NAME_KEY, name);
+  setVoteFeedback("Envoi…");
+  try {
+    await castVote(voteSessionCode(), { roundId: round.id, voter: name, guess });
+    voteHistory[round.id] = { guess, title: round.title, answer: voteHistory[round.id]?.answer || "" };
+    saveVoteHistory();
+    renderVoteChoices(round);
+    setVoteFeedback(`Vote enregistré : ${guess}. Tu peux encore changer d'avis.`, "ok");
+  } catch (error) {
+    setVoteFeedback(error.message, "ko");
+  }
+}
+
+function voteSessionCode() {
+  return (parseRoute().params.get("s") || "").toUpperCase();
+}
+
+async function pollVote() {
+  const code = voteSessionCode();
+  if (!code) {
+    setVoteFeedback("Ce lien ne contient pas de session — demande le lien de vote à l'organisateur.", "ko");
+    return;
+  }
+  try {
+    const data = await fetchRound(code);
+    voteRound = data.round;
+    if (!voteRound) {
+      $("vote-track-title").textContent = "En attente du premier morceau…";
+      $("vote-track-artists").textContent = "";
+      $("vote-track-position").textContent = "";
+      $("vote-choices").innerHTML = "";
+      $("vote-answer").classList.add("hidden");
+      setVoteFeedback("L'organisateur n'a pas encore lancé la playlist.");
+      return;
+    }
+    renderVoteRound(voteRound);
+  } catch (error) {
+    setVoteFeedback(
+      error.status === 503
+        ? "Vote en ligne indisponible : l'organisateur n'a pas configuré le stockage."
+        : `Connexion perdue : ${error.message}`,
+      "ko",
+    );
+  }
+}
+
+function openVoteView(params) {
+  const party = params.get("jeu");
+  $("vote-title-party").textContent = party
+    ? `« ${party} » — à qui appartient ce morceau ?`
+    : "À qui appartient ce morceau ?";
+  const known = params.get("n") || localStorage.getItem(VOTE_NAME_KEY) || "";
+  if (known) $("vote-name").value = known;
+  loadVoteHistory();
+  renderVoteScore();
+  startVotePolling();
+}
+
+function startVotePolling() {
+  if (voteTimer) return;
+  pollVote();
+  voteTimer = setInterval(pollVote, VOTE_POLL_MS);
+}
+
+function stopVote() {
+  clearInterval(voteTimer);
+  voteTimer = null;
+  voteRound = null;
 }
 
 /* ---------------------------------------------------------------- joueur */
@@ -725,6 +1106,10 @@ async function handlePlayerSend() {
     feedback.className = "feedback ok";
     feedback.textContent = `C'est envoyé, ${submission.name} — ta playlist est arrivée chez l'organisateur.`;
     button.textContent = "Envoyé ✓";
+    const voteLink = $("player-vote-link");
+    voteLink.href = voteUrl(code, submission.name);
+    voteLink.classList.remove("hidden");
+    localStorage.setItem(VOTE_NAME_KEY, submission.name);
     return;
   } catch (error) {
     feedback.className = "feedback ko";
@@ -760,6 +1145,7 @@ async function refreshUser() {
   $("logout-btn").classList.toggle("hidden", !logged);
   badge.classList.toggle("hidden", !logged);
   refreshMixButton();
+  refreshDevices();
   if (!logged) return;
   try {
     me = await getCurrentUser();
@@ -836,6 +1222,23 @@ function wireEvents() {
     if (liveEntry) downloadCsv(liveEntry.tracks, `corrige-${liveEntry.name}.csv`);
   });
   $("live-reveal").addEventListener("click", () => setRevealed(!revealed));
+  wireControls();
+  $("vote-copy").addEventListener("click", () => copy(voteUrl(), "Lien de vote copié."));
+  $("vote-share").addEventListener("click", async () => {
+    try {
+      await navigator.share({ title: "Playlist Mixer", text: "Vote à chaque morceau :", url: voteUrl() });
+    } catch { /* partage annulé */ }
+  });
+  $("vote-name").addEventListener("input", (event) => {
+    localStorage.setItem(VOTE_NAME_KEY, event.target.value.trim());
+  });
+  $("vote-reset").addEventListener("click", () => {
+    voteHistory = {};
+    saveVoteHistory();
+    renderVoteScore();
+    if (voteRound) renderVoteRound(voteRound);
+    toast("Tes paris sont effacés.");
+  });
   $("live-auto-reveal").addEventListener("change", (event) => {
     if (event.target.checked) setRevealed(true);
   });
@@ -879,8 +1282,10 @@ async function start() {
   }
   $("invite-name").value = localStorage.getItem(PARTY_KEY) || "";
   loadMixes();
-  if (!navigator.share) $("invite-share").classList.add("hidden");
-  else $("invite-share").classList.remove("hidden");
+  for (const id of ["invite-share", "vote-share"]) {
+    $(id).classList.toggle("hidden", !navigator.share);
+  }
+  loadVoteHistory();
   wireEvents();
 
   try {

@@ -282,6 +282,53 @@
       <div class="live-bar"><span id="live-progress"></span></div>
     </div>
     <p id="live-status" class="feedback">Choisis une playlist, lance-la sur Spotify, puis clique sur « Suivre la lecture ».</p>
+
+    <div class="remote">
+      <h3 class="subhead">La télécommande</h3>
+      <p class="hint">
+        Pilote la lecture sans toucher à Spotify. Il faut un compte Premium et un appareil sur
+        lequel Spotify est ouvert — l'ordinateur de la soirée, une enceinte, un téléphone.
+      </p>
+      <div class="row">
+        <label class="field grow">
+          <span>Appareil</span>
+          <select id="live-device"></select>
+        </label>
+        <button id="device-refresh" class="btn btn-ghost">Rafraîchir</button>
+      </div>
+      <div class="transport">
+        <button id="ctl-start" class="btn btn-primary" title="Démarre la playlist au premier morceau">▶︎ Lancer la playlist</button>
+        <button id="ctl-prev" class="btn btn-ghost" title="Morceau précédent">⏮</button>
+        <button id="ctl-toggle" class="btn btn-ghost" title="Lecture / pause">⏸ Pause</button>
+        <button id="ctl-next" class="btn btn-ghost" title="Morceau suivant">⏭</button>
+        <button id="ctl-stop" class="btn btn-ghost" title="Arrête et revient au début du morceau">⏹ Stop</button>
+      </div>
+      <p id="ctl-status" class="feedback"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Les votes</h2>
+    <p class="hint">
+      Chaque joueur ouvre ce lien sur son téléphone : il y voit le morceau en cours et parie sur son
+      propriétaire. Tu vois ici qui a voté — jamais ce qu'il a voté. Le tour est publié automatiquement
+      à chaque nouveau morceau, tant que le suivi de lecture tourne.
+    </p>
+    <div class="invite">
+      <div class="qr" id="vote-qr"></div>
+      <div class="invite-side">
+        <label class="field">
+          <span>Lien de vote pour les joueurs</span>
+          <input id="vote-link" type="text" readonly />
+        </label>
+        <div class="actions">
+          <button id="vote-copy" class="btn btn-ghost">Copier le lien</button>
+          <button id="vote-share" class="btn btn-ghost hidden">Partager</button>
+        </div>
+        <p id="vote-progress" class="feedback">En attente du premier morceau.</p>
+        <ul id="vote-voters" class="voters"></ul>
+      </div>
+    </div>
   </section>
 
   <section class="card">
@@ -296,6 +343,43 @@
         <thead><tr><th>#</th><th>Titre</th><th>Artiste</th><th>Durée</th><th class="answer">Joueur</th></tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+  </section>
+</section>
+
+<!-- ══════════════════════════════ VOTE ══════════════════════════════ -->
+<section class="view hidden" id="view-vote">
+  <a class="back" href="#/">← Accueil</a>
+  <h1 id="vote-title-party">À qui appartient ce morceau&nbsp;?</h1>
+  <p class="lead">
+    Garde cet écran ouvert pendant la soirée : il suit le morceau que joue l'organisateur. À chaque
+    titre, choisis le joueur à qui tu crois qu'il appartient. Personne ne voit ton pari.
+  </p>
+
+  <section class="card">
+    <label class="field">
+      <span>Ton prénom</span>
+      <input id="vote-name" type="text" placeholder="Alice" autocomplete="given-name" />
+    </label>
+    <p class="hint">Mets le même prénom que celui envoyé avec ta playlist : c'est lui que voit l'organisateur.</p>
+  </section>
+
+  <section class="card" id="vote-card">
+    <div class="vote-track">
+      <strong id="vote-track-title">En attente du premier morceau…</strong>
+      <span id="vote-track-artists" class="live-artists"></span>
+      <span id="vote-track-position" class="live-position"></span>
+    </div>
+    <div id="vote-choices" class="choices"></div>
+    <div id="vote-answer" class="vote-answer hidden"></div>
+    <p id="vote-feedback" class="feedback"></p>
+  </section>
+
+  <section class="card">
+    <h2>Ton tableau de chasse</h2>
+    <p id="vote-score" class="feedback">Aucun morceau révélé pour l'instant.</p>
+    <div class="actions">
+      <button id="vote-reset" class="btn btn-ghost">Repartir de zéro</button>
     </div>
   </section>
 </section>
@@ -347,6 +431,7 @@
       <button id="player-send" class="btn btn-primary">Envoyer à l'organisateur</button>
       <button id="player-share" class="btn btn-ghost">Partager le lien</button>
       <button id="player-copy" class="btn btn-ghost">Copier le message</button>
+      <a id="player-vote-link" class="btn btn-primary hidden" href="#/vote">Rejoindre le vote →</a>
     </div>
     <pre id="player-message" class="message hidden"></pre>
   </section>

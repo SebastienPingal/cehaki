@@ -4,6 +4,8 @@ const VERIFIER_KEY = "spm.verifier";
 const STATE_KEY = "spm.state";
 const CLIENT_KEY = "spm.clientId";
 
+import { CLIENT_ID as BUILT_IN_CLIENT_ID } from "./config.js";
+
 const AUTH_URL = "https://accounts.spotify.com/authorize";
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
 const SCOPES = ["playlist-modify-public", "playlist-modify-private"];
@@ -12,8 +14,14 @@ export function getRedirectUri() {
   return location.origin + location.pathname;
 }
 
+/** Client ID injecté au déploiement, sauf si l'utilisateur en a saisi un autre. */
 export function getClientId() {
-  return localStorage.getItem(CLIENT_KEY) || "";
+  return localStorage.getItem(CLIENT_KEY) || BUILT_IN_CLIENT_ID;
+}
+
+/** Vrai si le déploiement fournit déjà un Client ID : inutile de le demander. */
+export function hasBuiltInClientId() {
+  return Boolean(BUILT_IN_CLIENT_ID);
 }
 
 export function setClientId(id) {

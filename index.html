@@ -68,6 +68,12 @@
   <!-- 1. connexion -->
   <section class="card" id="config-card">
     <h2><span class="num">1</span> Connecte ton compte Spotify</h2>
+    <p class="hint" id="client-id-ready" hidden>
+      C'est ton compte qui hébergera la playlist finale. L'application Spotify est déjà configurée par
+      le déploiement — tu n'as qu'à te connecter.
+      <button id="client-id-override" class="linklike">Utiliser un autre Client ID</button>
+    </p>
+    <div id="client-id-setup">
     <p class="hint">
       C'est ton compte qui hébergera la playlist finale. Il te faut une app Spotify gratuite —
       cinq minutes, une seule fois : crée-la sur le
@@ -85,6 +91,7 @@
         <input id="redirect-uri" type="text" readonly />
       </label>
       <button id="copy-redirect" class="btn btn-ghost">Copier</button>
+    </div>
     </div>
 
     <details class="diag">

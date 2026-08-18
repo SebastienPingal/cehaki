@@ -125,9 +125,20 @@ Aucune dépendance, aucun build : du HTML/CSS/JS modules servis tels quels.
 
 ### Déployer
 
-Le site est entièrement statique : aucun build, aucune variable d'environnement côté serveur. Sur
-Vercel, importe le dépôt et laisse les réglages par défaut (*Framework preset : Other*, pas de build
-command, *Output directory* : la racine).
+Le site est statique. `vercel.json` fixe déjà la commande de build et le dossier de sortie : à
+l'import du dépôt, il n'y a rien à régler.
+
+Ajoute en revanche la variable d'environnement du projet (*Settings → Environment Variables*) :
+
+| Variable | Valeur |
+|---|---|
+| `SPOTIFY_CLIENT_ID` | le Client ID de ton app Spotify |
+
+Au build, `scripts/build-config.mjs` la transcrit dans `src/config.js`, que la page importe : plus
+personne n'a à saisir le Client ID. Un Client ID n'est pas un secret — il transite en clair dans
+l'URL d'autorisation. Le client **secret**, lui, n'a rien à faire ici : le flow PKCE s'en passe.
+
+Sans cette variable, la page reste fonctionnelle et demande simplement le Client ID à l'organisateur.
 
 Ajoute ensuite l'URL de production comme **Redirect URI** dans le dashboard Spotify, avec le slash
 final :

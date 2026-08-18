@@ -1,6 +1,6 @@
 import {
   getClientId, setClientId, getRedirectUri, login, logout,
-  isLoggedIn, handleRedirect, getRefreshToken,
+  isLoggedIn, handleRedirect, getRefreshToken, hasBuiltInClientId,
 } from "./auth.js";
 import { parsePlaylistId, parseSubmissionLine, fetchPlaylist, getCurrentUser, createPlaylist } from "./spotify.js";
 import { mix, formatDuration, toCsv } from "./mixer.js";
@@ -427,6 +427,11 @@ function wireEvents() {
     setClientId(event.target.value);
     toast("Client ID enregistré.");
   });
+  $("client-id-override").addEventListener("click", () => {
+    $("client-id-setup").hidden = false;
+    $("client-id-ready").hidden = true;
+    $("client-id").focus();
+  });
   $("copy-redirect").addEventListener("click", () => copy(getRedirectUri(), "URL de redirection copiée."));
   $("login-btn").addEventListener("click", () => {
     sessionStorage.setItem(RETURN_KEY, location.hash || "#/organisateur");
@@ -490,6 +495,10 @@ function wireEvents() {
 async function start() {
   $("redirect-uri").value = getRedirectUri();
   $("client-id").value = getClientId();
+  if (hasBuiltInClientId() && !localStorage.getItem("spm.clientId")) {
+    $("client-id-setup").hidden = true;
+    $("client-id-ready").hidden = false;
+  }
   $("invite-name").value = localStorage.getItem(PARTY_KEY) || "";
   if (!navigator.share) $("invite-share").classList.add("hidden");
   else $("invite-share").classList.remove("hidden");

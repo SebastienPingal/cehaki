@@ -129,7 +129,13 @@
         <span>Nom de la soirée (facultatif, affiché aux joueurs)</span>
         <input id="invite-name" type="text" placeholder="Soirée du 12 septembre" />
       </label>
+      <label class="field">
+        <span>Code de session</span>
+        <input id="session-code" type="text" readonly />
+      </label>
+      <button id="session-new" class="btn btn-ghost">Nouvelle session</button>
     </div>
+    <p id="session-status" class="feedback">Les playlists envoyées par les joueurs arriveront ici automatiquement.</p>
     <div class="invite">
       <div class="qr" id="invite-qr"></div>
       <div class="invite-side">
@@ -276,7 +282,8 @@
     </div>
     <p id="player-feedback" class="feedback hidden"></p>
     <div class="actions">
-      <button id="player-share" class="btn btn-primary">Envoyer à l'organisateur</button>
+      <button id="player-send" class="btn btn-primary">Envoyer à l'organisateur</button>
+      <button id="player-share" class="btn btn-ghost">Partager le lien</button>
       <button id="player-copy" class="btn btn-ghost">Copier le message</button>
     </div>
     <pre id="player-message" class="message hidden"></pre>

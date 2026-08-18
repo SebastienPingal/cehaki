@@ -6,8 +6,11 @@ import { parsePlaylistId, parseSubmissionLine, fetchPlaylist, getCurrentUser, cr
 import { mix, formatDuration, toCsv } from "./mixer.js";
 import { runDiagnostic, summarize } from "./diagnostic.js";
 import { qrToSvg } from "./qr.js";
+import { generateCode, submitPlaylist, fetchSubmissions } from "./session.js";
 
 const SOURCES_KEY = "spm.sources";
+const CODE_KEY = "spm.sessionCode";
+const POLL_MS = 5000;
 const PARTY_KEY = "spm.party";
 const RETURN_KEY = "spm.return";
 const $ = (id) => document.getElementById(id);
@@ -16,6 +19,8 @@ const $ = (id) => document.getElementById(id);
 let sources = [];
 let currentMix = null;
 let me = null;
+let pollTimer = null;
+let seenSubmissions = new Set();
 
 /* ---------------------------------------------------------------- toasts */
 
@@ -55,7 +60,12 @@ function showView() {
   $("auth-zone").classList.toggle("hidden", name !== "organisateur");
   window.scrollTo(0, 0);
 
-  if (name === "organisateur") refreshInvite();
+  if (name === "organisateur") {
+    refreshInvite();
+    startPolling();
+  } else {
+    stopPolling();
+  }
   if (name === "joueur") {
     const party = params.get("jeu");
     $("player-title").textContent = party ? `Ta playlist pour « ${party} »` : "Ta playlist pour la soirée";
@@ -78,13 +88,24 @@ function loadSavedSources() {
 
 /* --------------------------------------------------------------- invitation */
 
+function sessionCode() {
+  let code = localStorage.getItem(CODE_KEY);
+  if (!code) {
+    code = generateCode();
+    localStorage.setItem(CODE_KEY, code);
+  }
+  return code;
+}
+
 function playerUrl() {
   const party = $("invite-name").value.trim();
-  const query = party ? `?jeu=${encodeURIComponent(party)}` : "";
-  return `${getRedirectUri()}#/joueur${query}`;
+  const query = new URLSearchParams({ s: sessionCode() });
+  if (party) query.set("jeu", party);
+  return `${getRedirectUri()}#/joueur?${query}`;
 }
 
 function refreshInvite() {
+  $("session-code").value = sessionCode();
   const url = playerUrl();
   $("invite-link").value = url;
   try {
@@ -92,6 +113,60 @@ function refreshInvite() {
   } catch (error) {
     $("invite-qr").textContent = error.message;
   }
+}
+
+/* ------------------------------------------------- réception des dépôts */
+
+function setSessionStatus(message, kind = "") {
+  const el = $("session-status");
+  el.className = `feedback ${kind}`;
+  el.textContent = message;
+}
+
+/** Interroge la session et ajoute les playlists reçues, sans doublon. */
+async function pollSubmissions() {
+  let submissions;
+  try {
+    submissions = await fetchSubmissions(sessionCode());
+  } catch (error) {
+    setSessionStatus(
+      error.status === 503
+        ? "Réception automatique indisponible : les joueurs peuvent envoyer leur lien à la main."
+        : `Réception interrompue : ${error.message}`,
+      "ko",
+    );
+    stopPolling();
+    return;
+  }
+
+  const fresh = submissions.filter((s) => !seenSubmissions.has(`${s.name}:${s.playlistId}`));
+  for (const submission of fresh) {
+    seenSubmissions.add(`${submission.name}:${submission.playlistId}`);
+    if (sources.some((source) => source.id === submission.playlistId)) continue;
+    if (!isLoggedIn()) continue;
+    await addPlaylistById(submission.playlistId, submission.name);
+    toast(`Playlist de ${submission.name} reçue 🎉`);
+  }
+
+  const count = submissions.length;
+  setSessionStatus(
+    count === 0
+      ? "En attente des joueurs — leurs playlists arriveront ici automatiquement."
+      : `${count} playlist${count > 1 ? "s" : ""} reçue${count > 1 ? "s" : ""}.`
+        + (isLoggedIn() ? "" : " Connecte-toi pour les charger."),
+    count > 0 ? "ok" : "",
+  );
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  pollSubmissions();
+  pollTimer = setInterval(pollSubmissions, POLL_MS);
+}
+
+function stopPolling() {
+  clearInterval(pollTimer);
+  pollTimer = null;
 }
 
 /* -------------------------------------------------------------- rendu UI */
@@ -384,6 +459,40 @@ function playerMessage() {
   return `${submission.name} — ${submission.link}`;
 }
 
+/** Code de session transmis par le lien d'invitation. */
+function currentSessionCode() {
+  return parseRoute().params.get("s") || "";
+}
+
+async function handlePlayerSend() {
+  const submission = refreshPlayerFeedback();
+  const feedback = $("player-feedback");
+  if (!submission) return toast("Renseigne d'abord un lien de playlist valide.", true);
+  if (!submission.name) return toast("Ajoute ton prénom.", true);
+
+  const code = currentSessionCode();
+  if (!code) {
+    toast("Ce lien ne contient pas de session — envoie ton message à l'organisateur.", true);
+    return handlePlayerShare();
+  }
+
+  const button = $("player-send");
+  button.disabled = true;
+  button.textContent = "Envoi…";
+  try {
+    await submitPlaylist({ code, name: submission.name, playlist: submission.link });
+    feedback.className = "feedback ok";
+    feedback.textContent = `C'est envoyé, ${submission.name} — ta playlist est arrivée chez l'organisateur.`;
+    button.textContent = "Envoyé ✓";
+    return;
+  } catch (error) {
+    feedback.className = "feedback ko";
+    feedback.textContent = `${error.message} Utilise « Copier le message » et envoie-le à l'organisateur.`;
+    button.disabled = false;
+    button.textContent = "Réessayer";
+  }
+}
+
 async function handlePlayerShare() {
   const message = playerMessage();
   if (!message) return;
@@ -479,9 +588,21 @@ function wireEvents() {
   });
 
   for (const id of ["player-name", "player-playlist"]) {
-    $(id).addEventListener("input", refreshPlayerFeedback);
+    $(id).addEventListener("input", () => {
+      refreshPlayerFeedback();
+      const button = $("player-send");
+      button.disabled = false;
+      button.textContent = "Envoyer à l'organisateur";
+    });
   }
+  $("player-send").addEventListener("click", handlePlayerSend);
   $("player-share").addEventListener("click", handlePlayerShare);
+  $("session-new").addEventListener("click", () => {
+    localStorage.setItem(CODE_KEY, generateCode());
+    seenSubmissions = new Set();
+    refreshInvite();
+    setSessionStatus("Nouvelle session : renvoie le lien ou le QR code aux joueurs.");
+  });
   $("player-copy").addEventListener("click", () => {
     const message = playerMessage();
     if (message) {

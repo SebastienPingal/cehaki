@@ -11,6 +11,9 @@ et on devine **à qui appartient chaque morceau**. L'app garde le corrigé de so
 - **Accueil** — la règle du jeu en trois lignes et deux portes d'entrée.
 - **Espace organisateur** (`#/organisateur`) — connexion Spotify, invitation des joueurs par lien ou
   QR code, collecte des playlists, réglage du mix, corrigé.
+- **Réception automatique** — l'organisateur ouvre une session (un code à cinq caractères, embarqué
+  dans le lien et le QR code) ; chaque playlist envoyée par un joueur apparaît toute seule dans sa
+  liste, en quelques secondes.
 - **Espace joueur** (`#/joueur`) — la marche à suivre pour préparer sa playlist et la renvoyer en deux
   clics, sans connexion ni compte développeur. L'organisateur partage ce lien, éventuellement nommé :
   `#/joueur?jeu=Soirée%20du%2012`.
@@ -128,7 +131,21 @@ Aucune dépendance, aucun build : du HTML/CSS/JS modules servis tels quels.
 Le site est statique. `vercel.json` fixe déjà la commande de build et le dossier de sortie : à
 l'import du dépôt, il n'y a rien à régler.
 
-Ajoute en revanche la variable d'environnement du projet (*Settings → Environment Variables*) :
+### Stockage des sessions
+
+La réception automatique demande un stockage partagé entre les navigateurs. Sur Vercel :
+*Storage → Upstash Redis → Connect Project* (offre gratuite). L'intégration injecte
+`KV_REST_API_URL` et `KV_REST_API_TOKEN`, que `lib/store.js` reconnaît — les noms `UPSTASH_REDIS_REST_*`
+fonctionnent aussi.
+
+Sans ce stockage, rien ne casse : l'API répond 503 avec un message explicite, la page de l'organisateur
+le signale, et les joueurs retombent sur l'envoi manuel du message `Alice — https://…`.
+
+Les dépôts expirent au bout de 14 jours, une session accepte 40 playlists.
+
+### Variables d'environnement
+
+Ajoute la variable d'environnement du projet (*Settings → Environment Variables*) :
 
 | Variable | Valeur |
 |---|---|
@@ -153,9 +170,9 @@ production (ou depuis `http://127.0.0.1:4173/` en local, si tu l'as déclarée a
 
 ## Comment se déroule une partie
 
-1. Depuis l'espace organisateur, envoie le lien (ou le QR code) de l'espace joueur. Chacun prépare sa
-   playlist, la rend collaborative et te renvoie son lien au format `Alice — https://…`.
-2. Tu colles ces lignes d'un bloc dans l'app : le prénom devient l'étiquette du joueur.
+1. Depuis l'espace organisateur, envoie le lien (ou fais scanner le QR code) de l'espace joueur.
+2. Chacun prépare sa playlist, la rend collaborative et clique sur *Envoyer à l'organisateur* : elle
+   apparaît dans ta liste en quelques secondes, étiquetée à son prénom. Tu n'as rien à coller.
 3. Tu choisis 60 morceaux (ou 90 minutes), répartition équitable, et tu mixes.
 4. Tu crées la playlist, tu la lances **sans lecture aléatoire** (l'ordre est déjà mélangé, et le
    corrigé suit cet ordre).
@@ -173,6 +190,10 @@ Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 | `src/mixer.js` | logique pure du mélange (quotas pondérés, anti-répétition, doublons) |
 | `src/diagnostic.js` | teste une à une les permissions réelles de l'app Spotify |
 | `src/qr.js` | encodeur QR autonome (mode octet, correction M, versions 1 à 10) |
+| `src/session.js` | dépôt et relève des playlists côté navigateur |
+| `api/session.js` | fonction serverless : `GET` relève les dépôts, `POST` en ajoute un |
+| `lib/store.js` | Redis Upstash via son API REST |
+| `lib/validate.js` | validation partagée par l'API et la page |
 | `src/app.js` | glue UI |
 | `test/mixer.test.mjs` | tests du mélange (`node --test`) |
 | `test/qr.test.mjs` | empreintes de référence des matrices QR |

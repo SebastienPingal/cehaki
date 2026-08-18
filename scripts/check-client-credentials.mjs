@@ -33,7 +33,36 @@ if (playlistId.startsWith("37i9")) {
   console.warn("   Prends plutôt la playlist d'une vraie personne.\n");
 }
 
-const tokenResponse = await fetch("https://accounts.spotify.com/api/token", {
+/** fetch + messages lisibles : réseau injoignable, réponse non-JSON (portail/proxy), etc. */
+async function call(url, options = {}) {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    const code = error.cause?.code || error.message;
+    console.error(`❌ Impossible de joindre ${new URL(url).host} (${code}).\n`);
+    console.error(`Le script n'a pas pu ouvrir la connexion — ce n'est pas un refus de Spotify.
+  • Derrière un proxy d'entreprise ? le fetch de Node ignore HTTP(S)_PROXY par défaut.
+    Essaie : NODE_USE_ENV_PROXY=1 (expérimental sur Node 22) avec HTTPS_PROXY renseigné.
+  • Sinon, relance depuis un réseau non filtré (connexion perso, partage de connexion).
+  • Vérifie l'accès avec : curl -I https://accounts.spotify.com`);
+    process.exit(1);
+  }
+
+  const text = await response.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    console.error(`❌ Réponse inattendue de ${new URL(url).host} (HTTP ${response.status}), ce n'est pas du JSON :`);
+    console.error(`   ${text.slice(0, 200)}`);
+    console.error("\nUn proxy, un portail captif ou un filtre réseau s'intercale probablement.");
+    process.exit(1);
+  }
+  return { response, body };
+}
+
+const { response: tokenResponse, body: tokenData } = await call("https://accounts.spotify.com/api/token", {
   method: "POST",
   headers: {
     Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
@@ -41,9 +70,9 @@ const tokenResponse = await fetch("https://accounts.spotify.com/api/token", {
   },
   body: "grant_type=client_credentials",
 });
-const tokenData = await tokenResponse.json();
 if (!tokenResponse.ok) {
-  console.error(`❌ Token refusé (${tokenResponse.status}) :`, tokenData.error_description || tokenData.error);
+  console.error(`❌ Token refusé (${tokenResponse.status}) : ${tokenData.error_description || tokenData.error}`);
+  console.error("   Vérifie le Client ID et le Client Secret.");
   process.exit(1);
 }
 console.log("✅ Token d'application obtenu\n");
@@ -51,8 +80,7 @@ console.log("✅ Token d'application obtenu\n");
 const headers = { Authorization: `Bearer ${tokenData.access_token}` };
 
 async function probe(label, path) {
-  const response = await fetch(`https://api.spotify.com/v1${path}`, { headers });
-  const body = await response.json().catch(() => ({}));
+  const { response, body } = await call(`https://api.spotify.com/v1${path}`, { headers });
   if (!response.ok) {
     console.log(`❌ ${label} → ${response.status} ${body?.error?.message || ""}`);
     return null;

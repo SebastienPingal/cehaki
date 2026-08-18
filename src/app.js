@@ -1,15 +1,18 @@
 import {
   getClientId, setClientId, getRedirectUri, login, logout,
-  isLoggedIn, handleRedirect,
+  isLoggedIn, handleRedirect, getRefreshToken,
 } from "./auth.js";
-import { parsePlaylistId, fetchPlaylist, getCurrentUser, createPlaylist } from "./spotify.js";
+import { parsePlaylistId, parseSubmissionLine, fetchPlaylist, getCurrentUser, createPlaylist } from "./spotify.js";
 import { mix, formatDuration, toCsv } from "./mixer.js";
 import { runDiagnostic, summarize } from "./diagnostic.js";
+import { qrToSvg } from "./qr.js";
 
 const SOURCES_KEY = "spm.sources";
+const PARTY_KEY = "spm.party";
+const RETURN_KEY = "spm.return";
 const $ = (id) => document.getElementById(id);
 
-/** @type {Array<{key:string,id:string,label:string,owner:string,image:string,url:string,tracks:Array,status:string,error?:string}>} */
+/** @type {Array<{key:string,id:string,label:string,name:string,owner:string,image:string,url:string,tracks:Array,status:string,error?:string}>} */
 let sources = [];
 let currentMix = null;
 let me = null;
@@ -26,11 +29,43 @@ function toast(message, isError = false) {
   toastTimer = setTimeout(() => el.classList.add("hidden"), isError ? 7000 : 3500);
 }
 
+async function copy(text, message) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(message);
+  } catch {
+    toast("Copie refusée par le navigateur — sélectionne le texte à la main.", true);
+  }
+}
+
+/* --------------------------------------------------------------- routeur */
+
+const VIEWS = ["accueil", "organisateur", "joueur"];
+
+/** Découpe `#/joueur?jeu=Soirée` en nom de vue + paramètres. */
+function parseRoute() {
+  const [path, query] = location.hash.replace(/^#\/?/, "").split("?");
+  const name = VIEWS.includes(path) ? path : "accueil";
+  return { name, params: new URLSearchParams(query || "") };
+}
+
+function showView() {
+  const { name, params } = parseRoute();
+  for (const view of VIEWS) $(`view-${view}`).classList.toggle("hidden", view !== name);
+  $("auth-zone").classList.toggle("hidden", name !== "organisateur");
+  window.scrollTo(0, 0);
+
+  if (name === "organisateur") refreshInvite();
+  if (name === "joueur") {
+    const party = params.get("jeu");
+    $("player-title").textContent = party ? `Ta playlist pour « ${party} »` : "Ta playlist pour la soirée";
+  }
+}
+
 /* ------------------------------------------------------------ persistance */
 
 function saveSources() {
-  const light = sources.map(({ id, label }) => ({ id, label }));
-  localStorage.setItem(SOURCES_KEY, JSON.stringify(light));
+  localStorage.setItem(SOURCES_KEY, JSON.stringify(sources.map(({ id, label }) => ({ id, label }))));
 }
 
 function loadSavedSources() {
@@ -38,6 +73,24 @@ function loadSavedSources() {
     return JSON.parse(localStorage.getItem(SOURCES_KEY) || "[]");
   } catch {
     return [];
+  }
+}
+
+/* --------------------------------------------------------------- invitation */
+
+function playerUrl() {
+  const party = $("invite-name").value.trim();
+  const query = party ? `?jeu=${encodeURIComponent(party)}` : "";
+  return `${getRedirectUri()}#/joueur${query}`;
+}
+
+function refreshInvite() {
+  const url = playerUrl();
+  $("invite-link").value = url;
+  try {
+    $("invite-qr").innerHTML = qrToSvg(url, { size: 200 });
+  } catch (error) {
+    $("invite-qr").textContent = error.message;
   }
 }
 
@@ -123,10 +176,7 @@ function renderResult(result) {
   }
   $("result-card").classList.remove("hidden");
 
-  const repartition = result.perSource
-    .filter((s) => s.count > 0)
-    .map((s) => `${s.label} ${s.count}`)
-    .join(" · ");
+  const repartition = result.perSource.filter((s) => s.count > 0).map((s) => `${s.label} ${s.count}`).join(" · ");
   const shared = result.sharedCount > 0 ? ` · ${result.sharedCount} morceaux communs écartés` : "";
   $("mix-summary").textContent =
     `${result.tracks.length} morceaux · ${formatDuration(result.totalMs)} · ${repartition}${shared}`;
@@ -141,14 +191,8 @@ async function addPlaylistById(id, savedLabel) {
   }
   const source = {
     key: `${id}-${Math.random().toString(36).slice(2, 8)}`,
-    id,
-    label: savedLabel || "",
-    name: "",
-    owner: "",
-    image: "",
-    url: "",
-    tracks: [],
-    status: "loading",
+    id, label: savedLabel || "", name: "", owner: "", image: "", url: "",
+    tracks: [], status: "loading",
   };
   sources.push(source);
   renderSources();
@@ -156,12 +200,8 @@ async function addPlaylistById(id, savedLabel) {
   try {
     const playlist = await fetchPlaylist(id);
     Object.assign(source, {
-      name: playlist.name,
-      owner: playlist.owner,
-      image: playlist.image,
-      url: playlist.url,
-      tracks: playlist.tracks,
-      status: "ready",
+      name: playlist.name, owner: playlist.owner, image: playlist.image,
+      url: playlist.url, tracks: playlist.tracks, status: "ready",
     });
     if (!source.label) source.label = playlist.owner || playlist.name;
     saveSources();
@@ -178,17 +218,17 @@ async function handleAddPlaylists() {
     toast("Connecte-toi à Spotify d'abord.", true);
     return;
   }
-  const lines = $("playlist-input").value.split(/[\s,]+/).filter(Boolean);
+  const lines = $("playlist-input").value.split("\n").map((l) => l.trim()).filter(Boolean);
   if (lines.length === 0) return;
 
-  const ids = [];
+  const submissions = [];
   for (const line of lines) {
-    const id = parsePlaylistId(line);
-    if (id) ids.push(id);
-    else toast(`Lien non reconnu : ${line}`, true);
+    const parsed = parseSubmissionLine(line);
+    if (parsed) submissions.push(parsed);
+    else toast(`Lien non reconnu : ${line.slice(0, 60)}`, true);
   }
   $("playlist-input").value = "";
-  for (const id of ids) await addPlaylistById(id);
+  for (const { id, label } of submissions) await addPlaylistById(id, label);
 }
 
 /* ------------------------------------------------------------------ mix */
@@ -200,10 +240,7 @@ function handleMix() {
     return;
   }
   const mode = $("mode").value;
-  const target = mode === "duration"
-    ? Number($("target-duration").value) * 60_000
-    : Number($("target-count").value);
-
+  const target = mode === "duration" ? Number($("target-duration").value) * 60_000 : Number($("target-count").value);
   if (!target || target <= 0) {
     toast("Indique une limite valide.", true);
     return;
@@ -211,8 +248,7 @@ function handleMix() {
 
   currentMix = mix({
     sources: ready.map((s) => ({ key: s.key, label: s.label || s.name, tracks: s.tracks })),
-    mode,
-    target,
+    mode, target,
     balance: $("balance").value,
     dedupe: $("dedupe").checked,
     spread: $("spread").checked,
@@ -226,8 +262,7 @@ function handleMix() {
   $("create-btn").classList.remove("hidden");
   $("playlist-link").classList.add("hidden");
 
-  const wanted = mode === "count" ? target : null;
-  if (wanted && currentMix.tracks.length < wanted) {
+  if (mode === "count" && currentMix.tracks.length < target) {
     toast(`Seulement ${currentMix.tracks.length} morceaux disponibles après filtrage.`);
   }
 }
@@ -284,8 +319,7 @@ async function handleDiagnostic() {
   verdict.classList.add("hidden");
 
   try {
-    const foreignId = parsePlaylistId($("diag-foreign").value || "");
-    const results = await runDiagnostic(foreignId);
+    const results = await runDiagnostic(parsePlaylistId($("diag-foreign").value || ""));
     for (const result of results) {
       const li = document.createElement("li");
       li.className = result.ok ? "ok" : "ko";
@@ -293,7 +327,6 @@ async function handleDiagnostic() {
       mark.className = "mark";
       mark.textContent = result.ok ? "✅" : "❌";
       const text = document.createElement("span");
-      text.innerHTML = "";
       text.append(result.label, " — ");
       const detail = document.createElement("span");
       detail.className = "detail";
@@ -310,6 +343,62 @@ async function handleDiagnostic() {
     button.disabled = false;
     button.textContent = "Lancer le diagnostic";
   }
+}
+
+/* ---------------------------------------------------------------- joueur */
+
+function playerSubmission() {
+  const name = $("player-name").value.trim();
+  const link = $("player-playlist").value.trim();
+  const id = parsePlaylistId(link);
+  return { name, link, id };
+}
+
+function refreshPlayerFeedback() {
+  const { name, link, id } = playerSubmission();
+  const feedback = $("player-feedback");
+  if (!link) {
+    feedback.classList.add("hidden");
+    return null;
+  }
+  if (!id) {
+    feedback.className = "feedback ko";
+    feedback.textContent = "Ce lien ne ressemble pas à une playlist Spotify. Copie-le depuis « Inviter des collaborateurs ».";
+    return null;
+  }
+  feedback.className = "feedback ok";
+  feedback.textContent = name ? `C'est bon, ${name} — ton lien est valide.` : "Lien valide. Ajoute ton prénom et c'est prêt.";
+  return { name, link, id };
+}
+
+function playerMessage() {
+  const submission = refreshPlayerFeedback();
+  if (!submission) {
+    toast("Renseigne d'abord un lien de playlist valide.", true);
+    return null;
+  }
+  if (!submission.name) {
+    toast("Ajoute ton prénom, sinon l'organisateur ne saura pas à qui est la playlist.", true);
+    return null;
+  }
+  return `${submission.name} — ${submission.link}`;
+}
+
+async function handlePlayerShare() {
+  const message = playerMessage();
+  if (!message) return;
+  $("player-message").textContent = message;
+  $("player-message").classList.remove("hidden");
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Ma playlist", text: message });
+      return;
+    } catch {
+      // partage annulé : on retombe sur la copie
+    }
+  }
+  await copy(message, "Message copié — envoie-le à l'organisateur.");
 }
 
 /* ------------------------------------------------------------- démarrage */
@@ -332,15 +421,15 @@ async function refreshUser() {
 }
 
 function wireEvents() {
+  window.addEventListener("hashchange", showView);
+
   $("client-id").addEventListener("change", (event) => {
     setClientId(event.target.value);
     toast("Client ID enregistré.");
   });
-  $("copy-redirect").addEventListener("click", async () => {
-    await navigator.clipboard.writeText(getRedirectUri());
-    toast("URL de redirection copiée.");
-  });
+  $("copy-redirect").addEventListener("click", () => copy(getRedirectUri(), "URL de redirection copiée."));
   $("login-btn").addEventListener("click", () => {
+    sessionStorage.setItem(RETURN_KEY, location.hash || "#/organisateur");
     login().catch((error) => toast(error.message, true));
   });
   $("logout-btn").addEventListener("click", () => {
@@ -349,6 +438,24 @@ function wireEvents() {
     refreshUser();
     toast("Déconnecté.");
   });
+  $("copy-refresh").addEventListener("click", () => {
+    const token = getRefreshToken();
+    if (!token) return toast("Connecte-toi d'abord.", true);
+    copy(token, "Refresh token copié — traite-le comme un mot de passe.");
+  });
+
+  $("invite-name").addEventListener("input", () => {
+    localStorage.setItem(PARTY_KEY, $("invite-name").value);
+    refreshInvite();
+  });
+  $("invite-copy").addEventListener("click", () => copy(playerUrl(), "Lien d'invitation copié."));
+  $("invite-share").addEventListener("click", async () => {
+    try {
+      await navigator.share({ title: "Playlist Mixer", text: "Prépare ta playlist pour la soirée :", url: playerUrl() });
+    } catch { /* partage annulé */ }
+  });
+  $("invite-print").addEventListener("click", () => window.print());
+
   $("add-playlists").addEventListener("click", () => {
     handleAddPlaylists().catch((error) => toast(error.message, true));
   });
@@ -357,28 +464,48 @@ function wireEvents() {
     $("duration-field").classList.toggle("hidden", !isDuration);
     $("count-field").classList.toggle("hidden", isDuration);
   });
-  $("diag-run").addEventListener("click", handleDiagnostic);
   $("mix-btn").addEventListener("click", handleMix);
   $("create-btn").addEventListener("click", handleCreate);
   $("download-csv").addEventListener("click", handleDownloadCsv);
+  $("diag-run").addEventListener("click", handleDiagnostic);
   $("toggle-answers").addEventListener("click", (event) => {
-    const table = $("result-table");
-    const hidden = table.classList.toggle("answers-hidden");
+    const hidden = $("result-table").classList.toggle("answers-hidden");
     event.target.textContent = hidden ? "Afficher les réponses" : "Masquer les réponses";
+  });
+
+  for (const id of ["player-name", "player-playlist"]) {
+    $(id).addEventListener("input", refreshPlayerFeedback);
+  }
+  $("player-share").addEventListener("click", handlePlayerShare);
+  $("player-copy").addEventListener("click", () => {
+    const message = playerMessage();
+    if (message) {
+      $("player-message").textContent = message;
+      $("player-message").classList.remove("hidden");
+      copy(message, "Message copié.");
+    }
   });
 }
 
 async function start() {
   $("redirect-uri").value = getRedirectUri();
   $("client-id").value = getClientId();
+  $("invite-name").value = localStorage.getItem(PARTY_KEY) || "";
+  if (!navigator.share) $("invite-share").classList.add("hidden");
+  else $("invite-share").classList.remove("hidden");
   wireEvents();
 
   try {
-    if (await handleRedirect()) toast("Connexion réussie 👋");
+    if (await handleRedirect()) {
+      location.hash = sessionStorage.getItem(RETURN_KEY) || "#/organisateur";
+      sessionStorage.removeItem(RETURN_KEY);
+      toast("Connexion réussie 👋");
+    }
   } catch (error) {
     toast(error.message, true);
   }
 
+  showView();
   await refreshUser();
 
   if (isLoggedIn()) {

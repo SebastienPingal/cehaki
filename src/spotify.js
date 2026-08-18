@@ -49,6 +49,30 @@ export function parsePlaylistId(raw) {
   return null;
 }
 
+/**
+ * Lit une ligne envoyée par un joueur : « Alice — https://… », « Alice: https://… »
+ * ou un lien seul. Renvoie null si aucune playlist n'est reconnaissable.
+ */
+export function parseSubmissionLine(line) {
+  const value = line.trim();
+  if (!value) return null;
+
+  // Un lien seul ne contient pas d'espace : inutile de chercher une étiquette.
+  if (!/\s/.test(value)) {
+    const id = parsePlaylistId(value);
+    return id ? { id, label: "" } : null;
+  }
+
+  const separated = value.match(/^(.{1,40}?)\s*(?:—|–|-{1,2}|:)\s+(\S+)$/);
+  if (separated) {
+    const id = parsePlaylistId(separated[2]);
+    if (id) return { id, label: separated[1].trim() };
+  }
+
+  const id = parsePlaylistId(value);
+  return id ? { id, label: "" } : null;
+}
+
 export function getCurrentUser() {
   return api("/me");
 }

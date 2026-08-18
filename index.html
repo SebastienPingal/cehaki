@@ -4,14 +4,14 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Playlist Mixer — devine à qui est la chanson</title>
-<meta name="description" content="Mélange plusieurs playlists Spotify publiques en une seule playlist de jeu." />
+<meta name="description" content="Chacun apporte sa playlist, l'app les mélange, et on devine à qui appartient chaque morceau." />
 <link rel="stylesheet" href="./src/styles.css" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>" />
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="logo">🎧</span> <strong>Playlist Mixer</strong></div>
-  <div class="auth" id="auth-zone">
+  <a class="brand" href="#/"><span class="logo">🎧</span> <strong>Playlist Mixer</strong></a>
+  <div class="auth hidden" id="auth-zone">
     <span id="user-badge" class="badge hidden"></span>
     <button id="login-btn" class="btn btn-primary">Se connecter à Spotify</button>
     <button id="logout-btn" class="btn btn-ghost hidden">Déconnexion</button>
@@ -19,18 +19,61 @@
 </header>
 
 <main>
-  <p class="intro">
-    Chaque joueur crée une playlist publique de son top&nbsp;100. Tu colles les liens ici, l'app fabrique
-    une playlist mélangée dans ton compte Spotify&nbsp;: on la lance, et on devine à qui appartient chaque morceau.
-  </p>
 
-  <!-- ÉTAPE 0 : config -->
-  <section class="card" id="config-card">
-    <h2>0. Ton application Spotify</h2>
+<!-- ══════════════════════════════ ACCUEIL ══════════════════════════════ -->
+<section class="view" id="view-accueil">
+  <div class="hero">
+    <h1>Devine à qui appartient la chanson</h1>
+    <p class="lead">
+      Chaque joueur apporte la playlist de ses morceaux préférés. L'app les mélange en une seule
+      playlist Spotify, dans un ordre équilibré. On la lance, et à chaque titre, chacun parie sur
+      son propriétaire.
+    </p>
+  </div>
+
+  <div class="choice">
+    <a class="choice-card" href="#/organisateur">
+      <span class="choice-icon">🎛️</span>
+      <strong>J'organise la soirée</strong>
+      <span>Je rassemble les playlists, je fabrique le mix et je garde le corrigé.</span>
+      <span class="choice-go">Commencer →</span>
+    </a>
+    <a class="choice-card" href="#/joueur">
+      <span class="choice-icon">🎤</span>
+      <strong>Je participe</strong>
+      <span>Je prépare ma playlist et je l'envoie à l'organisateur. Deux minutes.</span>
+      <span class="choice-go">Ma playlist →</span>
+    </a>
+  </div>
+
+  <div class="card how">
+    <h2>Comment ça se passe</h2>
+    <ol class="steps">
+      <li><strong>Chacun fait sa playlist.</strong> Une centaine de titres, ceux qu'on assume et ceux qu'on assume moins.</li>
+      <li><strong>L'organisateur rassemble.</strong> Il récupère les liens et lance le mélange : autant de morceaux par joueur, jamais deux du même à la suite.</li>
+      <li><strong>On joue.</strong> La playlist tourne, chacun note son pari à chaque titre. L'organisateur a le corrigé.</li>
+    </ol>
     <p class="hint">
-      Crée une app gratuite sur le
-      <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">dashboard développeur Spotify</a>,
-      ajoute l'URL de redirection ci-dessous, puis colle le <em>Client ID</em>. Il reste dans ton navigateur, rien n'est envoyé ailleurs.
+      Comptez un point par bonne réponse, deux si personne d'autre n'a trouvé. Les morceaux présents
+      dans plusieurs playlists sont écartés automatiquement : ils ne sont devinables par personne.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ ORGANISATEUR ═══════════════════════════ -->
+<section class="view hidden" id="view-organisateur">
+  <a class="back" href="#/">← Accueil</a>
+  <h1>Espace organisateur</h1>
+
+  <!-- 1. connexion -->
+  <section class="card" id="config-card">
+    <h2><span class="num">1</span> Connecte ton compte Spotify</h2>
+    <p class="hint">
+      C'est ton compte qui hébergera la playlist finale. Il te faut une app Spotify gratuite —
+      cinq minutes, une seule fois : crée-la sur le
+      <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">dashboard développeur</a>,
+      coche <em>Web API</em>, colle l'URL de redirection ci-dessous, puis reporte le <em>Client ID</em> ici.
+      Il ne quitte pas ton navigateur.
     </p>
     <div class="row">
       <label class="field grow">
@@ -38,7 +81,7 @@
         <input id="client-id" type="text" placeholder="ex. 4f9c1a…" autocomplete="off" spellcheck="false" />
       </label>
       <label class="field grow">
-        <span>Redirect URI à copier dans le dashboard</span>
+        <span>URL de redirection à coller dans le dashboard</span>
         <input id="redirect-uri" type="text" readonly />
       </label>
       <button id="copy-redirect" class="btn btn-ghost">Copier</button>
@@ -47,29 +90,66 @@
     <details class="diag">
       <summary>Diagnostic — qu'est-ce que mon app a le droit de faire&nbsp;?</summary>
       <p class="hint">
-        Depuis 2026, une app Spotify en « mode développement » ne peut lire le contenu que des playlists
-        dont tu es propriétaire ou collaborateur. Ce test le vérifie sur ton compte, en une dizaine de secondes.
-        Il crée une playlist de test puis la retire aussitôt.
+        Spotify ne laisse lire le contenu que des playlists dont tu es propriétaire ou collaborateur.
+        Ce test le vérifie sur ton compte en une dizaine de secondes ; il crée une playlist de test
+        puis la retire aussitôt.
       </p>
       <div class="row">
         <label class="field grow">
-          <span>Lien d'une playlist publique de quelqu'un d'autre (le point décisif)</span>
+          <span>Lien d'une playlist de quelqu'un d'autre (le point décisif)</span>
           <input id="diag-foreign" type="text" placeholder="https://open.spotify.com/playlist/…" />
         </label>
         <button id="diag-run" class="btn btn-ghost">Lancer le diagnostic</button>
       </div>
       <ul id="diag-results" class="diag-results"></ul>
       <p id="diag-verdict" class="verdict hidden"></p>
+      <p class="hint">
+        <button id="copy-refresh" class="linklike">Copier mon refresh token</button> — utile seulement
+        pour déboguer en ligne de commande. C'est un secret : ne le publie nulle part.
+      </p>
     </details>
   </section>
 
-  <!-- ÉTAPE 1 : sources -->
+  <!-- 2. inviter -->
   <section class="card">
-    <h2>1. Les playlists des joueurs</h2>
+    <h2><span class="num">2</span> Invite les joueurs</h2>
+    <p class="hint">
+      Envoie-leur ce lien, ou fais-leur scanner le QR code. Ils y trouvent la marche à suivre et te
+      renvoient leur playlist en deux clics — sans compte développeur ni connexion.
+    </p>
     <div class="row">
       <label class="field grow">
-        <span>Lien(s) de playlist Spotify — un par ligne, on peut en coller plusieurs d'un coup</span>
-        <textarea id="playlist-input" rows="3" placeholder="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M&#10;spotify:playlist:1BxfuPKGuaTgP7aM0Bbdwr"></textarea>
+        <span>Nom de la soirée (facultatif, affiché aux joueurs)</span>
+        <input id="invite-name" type="text" placeholder="Soirée du 12 septembre" />
+      </label>
+    </div>
+    <div class="invite">
+      <div class="qr" id="invite-qr"></div>
+      <div class="invite-side">
+        <label class="field">
+          <span>Lien pour les joueurs</span>
+          <input id="invite-link" type="text" readonly />
+        </label>
+        <div class="actions">
+          <button id="invite-copy" class="btn btn-ghost">Copier le lien</button>
+          <button id="invite-share" class="btn btn-ghost hidden">Partager</button>
+          <button id="invite-print" class="btn btn-ghost">Imprimer le QR</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. playlists -->
+  <section class="card">
+    <h2><span class="num">3</span> Rassemble les playlists</h2>
+    <p class="hint">
+      Un lien par ligne. Le format que les joueurs t'envoient — <code>Alice — https://…</code> — est
+      reconnu, le prénom devient l'étiquette.
+    </p>
+    <div class="row">
+      <label class="field grow">
+        <span>Liens des playlists</span>
+        <textarea id="playlist-input" rows="3" placeholder="Alice — https://open.spotify.com/playlist/…&#10;Bob — spotify:playlist:…"></textarea>
       </label>
       <button id="add-playlists" class="btn btn-primary">Ajouter</button>
     </div>
@@ -77,9 +157,9 @@
     <p id="sources-empty" class="hint">Aucune playlist pour l'instant.</p>
   </section>
 
-  <!-- ÉTAPE 2 : réglages -->
+  <!-- 4. réglages -->
   <section class="card">
-    <h2>2. Réglages du mix</h2>
+    <h2><span class="num">4</span> Règle le mix</h2>
     <div class="grid">
       <label class="field">
         <span>Limite</span>
@@ -105,7 +185,7 @@
       </label>
       <label class="field checkbox">
         <input id="dedupe" type="checkbox" checked />
-        <span>Retirer les morceaux présents dans plusieurs playlists <em>(recommandé : ils sont indevinables)</em></span>
+        <span>Retirer les morceaux présents dans plusieurs playlists <em>(ils sont indevinables)</em></span>
       </label>
       <label class="field checkbox">
         <input id="spread" type="checkbox" checked />
@@ -127,10 +207,10 @@
     </div>
   </section>
 
-  <!-- ÉTAPE 3 : résultat -->
+  <!-- 5. corrigé -->
   <section class="card hidden" id="result-card">
-    <h2>3. Le corrigé</h2>
-    <p class="hint">Ne le montre pas aux joueurs. L'ordre ci-dessous est exactement celui de la playlist.</p>
+    <h2><span class="num">5</span> Le corrigé</h2>
+    <p class="hint">Ne le montre pas aux joueurs. L'ordre ci-dessous est exactement celui de la playlist : ne lance pas la lecture aléatoire.</p>
     <div class="actions">
       <button id="toggle-answers" class="btn btn-ghost">Masquer les réponses</button>
       <button id="download-csv" class="btn btn-ghost">Télécharger le corrigé (CSV)</button>
@@ -143,6 +223,59 @@
       </table>
     </div>
   </section>
+</section>
+
+<!-- ═════════════════════════════ JOUEUR ═════════════════════════════ -->
+<section class="view hidden" id="view-joueur">
+  <a class="back" href="#/">← Accueil</a>
+  <h1 id="player-title">Ta playlist pour la soirée</h1>
+  <p class="lead">
+    Prépare la playlist de tes morceaux préférés : les autres devront deviner qu'ils sont à toi.
+    Rien à installer, aucun compte à créer — trois étapes, deux minutes.
+  </p>
+
+  <section class="card">
+    <h2><span class="num">1</span> Fais ta playlist</h2>
+    <p class="hint">
+      Dans Spotify, crée une playlist et ajoutes-y une centaine de titres qui te ressemblent. Les
+      évidences autant que les secrets honteux : ce sont eux qui font gagner les autres.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">2</span> Rends-la collaborative</h2>
+    <p class="hint">
+      C'est l'étape qui permet à l'organisateur de lire son contenu — une playlist simplement publique
+      ne suffit pas, Spotify ne l'autorise plus.
+    </p>
+    <ol class="steps">
+      <li>Ouvre ta playlist dans Spotify.</li>
+      <li>Menu <strong>⋯</strong> → <strong>Inviter des collaborateurs</strong>.</li>
+      <li><strong>Copier le lien</strong> : c'est celui-là qu'il faut envoyer.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2><span class="num">3</span> Envoie-la</h2>
+    <div class="grid">
+      <label class="field">
+        <span>Ton prénom</span>
+        <input id="player-name" type="text" placeholder="Alice" autocomplete="given-name" />
+      </label>
+      <label class="field">
+        <span>Le lien de ta playlist</span>
+        <input id="player-playlist" type="text" placeholder="https://open.spotify.com/playlist/…" spellcheck="false" />
+      </label>
+    </div>
+    <p id="player-feedback" class="feedback hidden"></p>
+    <div class="actions">
+      <button id="player-share" class="btn btn-primary">Envoyer à l'organisateur</button>
+      <button id="player-copy" class="btn btn-ghost">Copier le message</button>
+    </div>
+    <pre id="player-message" class="message hidden"></pre>
+  </section>
+</section>
+
 </main>
 
 <div id="toast" class="toast hidden"></div>

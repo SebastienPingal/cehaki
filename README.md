@@ -6,6 +6,18 @@ playlist créée dans ton compte.
 Le jeu : chaque joueur fait une playlist publique de son top 100. On mixe tout, on lance la playlist,
 et on devine **à qui appartient chaque morceau**. L'app garde le corrigé de son côté.
 
+## Trois écrans
+
+- **Accueil** — la règle du jeu en trois lignes et deux portes d'entrée.
+- **Espace organisateur** (`#/organisateur`) — connexion Spotify, invitation des joueurs par lien ou
+  QR code, collecte des playlists, réglage du mix, corrigé.
+- **Espace joueur** (`#/joueur`) — la marche à suivre pour préparer sa playlist et la renvoyer en deux
+  clics, sans connexion ni compte développeur. L'organisateur partage ce lien, éventuellement nommé :
+  `#/joueur?jeu=Soirée%20du%2012`.
+
+Le QR code est généré à la volée par `src/qr.js`, sans aucune dépendance : la page interdit les
+scripts externes. L'organisateur peut l'imprimer et le poser sur la table.
+
 ## Ce que ça fait
 
 - Ajout de playlists par lien (`open.spotify.com/playlist/…` ou `spotify:playlist:…`), plusieurs d'un coup.
@@ -106,9 +118,9 @@ chaque push sur `main`. Pense à ajouter l'URL publiée comme Redirect URI dans 
 
 ## Comment se déroule une partie
 
-1. Depuis ton compte, crée une playlist **collaborative** par joueur (« Top 100 — Alice », …) et
-   envoie à chacun son lien d'invitation. Chacun y dépose ses morceaux depuis son appli Spotify.
-2. Tu colles ces liens dans l'app et tu nommes chaque source avec le prénom du joueur.
+1. Depuis l'espace organisateur, envoie le lien (ou le QR code) de l'espace joueur. Chacun prépare sa
+   playlist, la rend collaborative et te renvoie son lien au format `Alice — https://…`.
+2. Tu colles ces lignes d'un bloc dans l'app : le prénom devient l'étiquette du joueur.
 3. Tu choisis 60 morceaux (ou 90 minutes), répartition équitable, et tu mixes.
 4. Tu crées la playlist, tu la lances **sans lecture aléatoire** (l'ordre est déjà mélangé, et le
    corrigé suit cet ordre).
@@ -125,8 +137,11 @@ Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 | `src/spotify.js` | appels Web API (endpoints `/items` et `/me/playlists` post-migration 2026) : lecture paginée, création, ajout par lots de 100 |
 | `src/mixer.js` | logique pure du mélange (quotas pondérés, anti-répétition, doublons) |
 | `src/diagnostic.js` | teste une à une les permissions réelles de l'app Spotify |
+| `src/qr.js` | encodeur QR autonome (mode octet, correction M, versions 1 à 10) |
 | `src/app.js` | glue UI |
-| `test/mixer.test.mjs` | tests de `mixer.js` (`node --test`) |
+| `test/mixer.test.mjs` | tests du mélange (`node --test`) |
+| `test/qr.test.mjs` | empreintes de référence des matrices QR |
+| `test/parsing.test.mjs` | lecture des liens et des envois des joueurs |
 
 Le mélange utilise une file d'attente pondérée : chaque joueur annonce la « date » de son prochain
 morceau — `(déjà pris + 1) / poids` — et le plus tôt passe. Les quotas sont donc respectés à tout

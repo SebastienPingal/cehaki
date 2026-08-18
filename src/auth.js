@@ -56,6 +56,11 @@ function writeToken(data) {
   return stored;
 }
 
+/** Jeton de rafraîchissement brut — pour déboguer en ligne de commande. */
+export function getRefreshToken() {
+  return readToken()?.refresh_token || null;
+}
+
 export function isLoggedIn() {
   const token = readToken();
   return Boolean(token?.access_token);

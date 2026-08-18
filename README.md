@@ -65,6 +65,18 @@ La page inclut un **diagnostic** (section 0, « qu'est-ce que mon app a le droit
 ces limites sur ton propre compte : lecture de tes playlists, lecture d'une playlist d'autrui, création,
 ajout de morceaux. En dix secondes tu sais si tu dois passer par une copie manuelle ou non.
 
+### Vérifier ce que ton compte autorise, en ligne de commande
+
+```bash
+SPOTIFY_CLIENT_ID=… SPOTIFY_REFRESH_TOKEN=… \
+SPOTIFY_TEST_PLAYLIST_COLLAB=… SPOTIFY_TEST_PLAYLIST_FOREIGN=… \
+  npm run check:access
+```
+
+Le refresh token s'obtient depuis la page (espace organisateur → *Diagnostic* → *Copier mon refresh
+token*) : il est émis par Spotify à la connexion, il ne figure pas dans le dashboard. Le flow PKCE
+n'exige **aucun client secret** pour le rafraîchir. Traite-le comme un mot de passe.
+
 ### Tester la piste « token d'application »
 
 Le flow **Client Credentials** (client ID + secret, sans utilisateur connecté) est une autre porte

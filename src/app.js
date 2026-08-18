@@ -237,11 +237,9 @@ async function handleCreate() {
   button.disabled = true;
   button.textContent = "Création…";
   try {
-    if (!me) me = await getCurrentUser();
     const name = $("playlist-name").value.trim() || `Blind test — ${new Date().toLocaleDateString("fr-FR")}`;
     const players = currentMix.perSource.filter((s) => s.count > 0).map((s) => s.label).join(", ");
     const playlist = await createPlaylist({
-      userId: me.id,
       name,
       description: `Mix généré avec Playlist Mixer — joueurs : ${players}. À qui appartient chaque morceau ?`,
       isPublic: $("public-playlist").checked,

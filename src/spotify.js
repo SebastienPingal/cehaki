@@ -23,6 +23,15 @@ async function api(path, options = {}, attempt = 0) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    // Depuis mars 2026, les apps en « Development Mode » ne peuvent lire le contenu
+    // que des playlists dont l'utilisateur connecté est propriétaire ou collaborateur.
+    if (response.status === 403) {
+      throw new Error(
+        data?.error?.message
+          ? `Refusé par Spotify (403) : ${data.error.message}`
+          : "Refusé par Spotify (403) — en mode développement, une app ne peut lire que les playlists dont tu es propriétaire ou collaborateur.",
+      );
+    }
     throw new Error(data?.error?.message || `Erreur Spotify (${response.status}).`);
   }
   return data;
@@ -48,17 +57,19 @@ export function getCurrentUser() {
 export async function fetchPlaylist(playlistId) {
   const meta = await api(`/playlists/${playlistId}?fields=id,name,owner(display_name),images,external_urls`);
 
+  // `/items` (et `item` au lieu de `track`) depuis la migration Web API de février 2026 ;
+  // `/tracks` renvoie désormais 403.
   const fields = [
     "next",
-    "items(track(id,uri,name,duration_ms,is_local,type,is_playable,artists(name)))",
+    "items(item(id,uri,name,duration_ms,is_local,type,is_playable,artists(name)))",
   ].join(",");
-  let url = `${API}/playlists/${playlistId}/tracks?limit=100&fields=${encodeURIComponent(fields)}`;
+  let url = `${API}/playlists/${playlistId}/items?limit=100&fields=${encodeURIComponent(fields)}`;
   const tracks = [];
 
   while (url) {
     const page = await api(url);
-    for (const item of page.items || []) {
-      const track = item.track;
+    for (const entry of page.items || []) {
+      const track = entry.item ?? entry.track;
       // On écarte les épisodes de podcast, les fichiers locaux et les pistes indisponibles.
       if (!track || track.is_local || track.type !== "track" || !track.uri || !track.id) continue;
       if (track.is_playable === false) continue;
@@ -83,15 +94,18 @@ export async function fetchPlaylist(playlistId) {
   };
 }
 
-/** Crée la playlist et y pousse les morceaux par lots de 100. */
-export async function createPlaylist({ userId, name, description, isPublic, uris }) {
-  const playlist = await api(`/users/${encodeURIComponent(userId)}/playlists`, {
+/**
+ * Crée la playlist dans le compte connecté et y pousse les morceaux par lots de 100.
+ * `POST /users/{id}/playlists` a été retiré en février 2026 : on passe par `/me/playlists`.
+ */
+export async function createPlaylist({ name, description, isPublic, uris }) {
+  const playlist = await api("/me/playlists", {
     method: "POST",
     body: JSON.stringify({ name, description, public: isPublic }),
   });
 
   for (let i = 0; i < uris.length; i += 100) {
-    await api(`/playlists/${playlist.id}/tracks`, {
+    await api(`/playlists/${playlist.id}/items`, {
       method: "POST",
       body: JSON.stringify({ uris: uris.slice(i, i + 100) }),
     });

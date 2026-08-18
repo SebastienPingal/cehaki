@@ -23,7 +23,7 @@ et on devine **à qui appartient chaque morceau**. L'app garde le corrigé de so
 1. Va sur le [dashboard développeur Spotify](https://developer.spotify.com/dashboard) → *Create app*.
    Un compte Spotify gratuit suffit.
 2. Dans les réglages de l'app, ajoute la **Redirect URI** correspondant à l'endroit où tu ouvres la page :
-   - GitHub Pages : `https://<ton-pseudo>.github.io/spotify-playlist-mixer/`
+   - GitHub Pages : `https://sebastienpingal.github.io/cehaki/`
    - en local : `http://127.0.0.1:4173/`
 
    Coche *Web API* comme API utilisée.

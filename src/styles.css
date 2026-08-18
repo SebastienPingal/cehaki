@@ -320,6 +320,20 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 4px; fo
 .vote-answer.right { border-color: var(--accent); color: var(--accent); }
 .vote-answer.wrong { border-color: var(--danger); color: #ffc4c9; }
 
+/* ------------------------------------------------------------- classement */
+
+.board { list-style: none; margin: .8rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+.board-row {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .55rem .85rem; border-radius: 10px;
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+.board-rank { flex: none; width: 1.8rem; text-align: center; font-size: 1rem; color: var(--muted); }
+.board-name { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-points { flex: none; color: var(--accent); }
+.board-detail { flex: none; color: var(--muted); font-size: .8rem; }
+.board-row.me { border-color: var(--accent); }
+
 @media print {
   .topbar, .back, .actions, .hint, .field, h2 .num { display: none !important; }
   body { background: #fff; color: #000; }

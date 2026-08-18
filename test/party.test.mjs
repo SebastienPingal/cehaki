@@ -125,3 +125,34 @@ test("méthodes et codes invalides", async () => {
   assert.equal(wrong.statusCode, 405);
   assert.equal(wrong.headers.Allow, "POST");
 });
+
+test("les paris ne sortent qu'après la révélation du morceau", async () => {
+  fakeRedis();
+  await party({ method: "POST", query: { code: "AB3CD" }, body: { round } }, fakeRes());
+  await vote({ method: "POST", query: { code: "AB3CD" }, body: { roundId: round.id, voter: "Alice", guess: "Bob" } }, fakeRes());
+
+  const secret = fakeRes();
+  await party({ method: "GET", query: { code: "AB3CD" } }, secret);
+  assert.equal(secret.body.votes, undefined, "avant la révélation, aucun pari ne sort");
+  assert.deepEqual(secret.body.voters.map((v) => v.name), ["Alice"]);
+
+  await party({ method: "POST", query: { code: "AB3CD" }, body: { round: { ...round, revealed: true } } }, fakeRes());
+  const open = fakeRes();
+  await party({ method: "GET", query: { code: "AB3CD" } }, open);
+  assert.deepEqual(open.body.votes, [{ name: "Alice", guess: "Bob", at: open.body.votes[0].at }]);
+});
+
+test("le barème voyage avec le tour", () => {
+  assert.equal(validateRound({ code: "AB3CD", round }).value.bonus, true);
+  assert.equal(validateRound({ code: "AB3CD", round: { ...round, bonus: false } }).value.bonus, false);
+});
+
+test("le classement publié est borné et nettoyé", () => {
+  const board = { "  Alice ": { points: "3", right: 2, votes: 4 }, "": { points: 9 }, Bob: { points: -5, right: 1e9 } };
+  const value = validateRound({ code: "AB3CD", round: { ...round, board } }).value;
+  assert.deepEqual(value.board, {
+    Alice: { points: 3, right: 2, votes: 4 },
+    Bob: { points: 0, right: 9999, votes: 0 },
+  });
+  assert.deepEqual(validateRound({ code: "AB3CD", round }).value.board, {});
+});

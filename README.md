@@ -45,9 +45,12 @@ scripts externes. L'organisateur peut l'imprimer et le poser sur la table.
   choix de l'appareil Spotify — sans quitter la page. (Compte **Premium** requis : Spotify réserve le
   pilotage de la lecture aux abonnés, et il faut un appareil sur lequel Spotify est ouvert.)
 - **Vote des joueurs** : à chaque morceau, l'écran de soirée publie le tour ; les téléphones affichent
-  le titre et un bouton par joueur. L'organisateur voit **qui a voté**, jamais **ce qu'il a voté** —
-  les paris ne ressortent jamais du serveur. Chaque joueur suit son propre score, calculé chez lui à
-  partir des morceaux révélés.
+  le titre et un bouton par joueur. Tant que le morceau n'est pas révélé, l'organisateur voit
+  **qui a voté** et jamais **ce qu'il a voté** : le serveur ne rend que les prénoms.
+- **Classement automatique** : à chaque morceau révélé, les points sont comptés et le classement
+  s'affiche — sur l'écran de soirée comme sur les téléphones. Barème au choix : 1 point par bonne
+  réponse, ou 1 point et **2 si personne d'autre n'a trouvé** (par défaut). Chaque joueur garde aussi
+  son propre décompte, calculé chez lui.
 
 ## Mise en route (5 minutes)
 
@@ -161,8 +164,14 @@ Les dépôts expirent au bout de 14 jours, une session accepte 40 playlists.
 
 Le même stockage porte le **tour en cours** et les **votes** : une clé `round:CODE` pour le morceau
 joué, une clé `votes:CODE:TOUR` par morceau. La réponse n'est jointe au tour qu'une fois le morceau
-révélé par l'organisateur — avant, elle ne quitte pas son écran. Et l'API ne renvoie jamais le contenu
-d'un vote : `GET /api/party` ne rend que les prénoms des votants.
+révélé par l'organisateur — avant, elle ne quitte pas son écran, et `GET /api/party` ne rend que les
+prénoms des votants. **Après** la révélation, les paris de ce tour deviennent lisibles : la réponse est
+alors publique, il n'y a plus rien à protéger, et c'est ce qui permet de compter les points.
+
+Le classement est tenu par l'écran de soirée — le seul à voir tous les morceaux — et republié avec le
+tour, pour que les téléphones affichent tous le même. Il est aussi gardé dans son `localStorage` : un
+rafraîchissement en pleine partie ne perd ni le classement, ni le tour en cours (donc ni les votes déjà
+déposés).
 
 ### Variables d'environnement
 
@@ -204,7 +213,7 @@ production (ou depuis `http://127.0.0.1:4173/` en local, si tu l'as déclarée a
    remélange et recrée.
 7. Fais scanner le **QR code des votes** : chacun ouvre l'écran de vote sur son téléphone et parie à
    chaque morceau. Tu vois les prénoms se cocher au fur et à mesure ; quand tout le monde a voté, tu
-   révèles — la réponse s'affiche alors aussi sur leurs téléphones, avec leur score.
+   révèles — la réponse et le classement mis à jour s'affichent alors sur tous les écrans.
 
 Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 
@@ -217,7 +226,7 @@ Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 | `src/spotify.js` | appels Web API (endpoints `/items` et `/me/playlists` post-migration 2026) : lecture paginée, création, ajout par lots de 100 |
 | `src/mixer.js` | logique pure du mélange (quotas pondérés, anti-répétition, doublons) |
 | `src/nowplaying.js` | logique pure du suivi en direct (corrigé indexé, cadence de sondage) |
-| `src/voting.js` | logique pure des votes (tour publié, votants, score) |
+| `src/voting.js` | logique pure des votes (tour publié, votants, points, classement) |
 | `src/party.js` | publication du tour et dépôt des votes côté navigateur |
 | `api/party.js` | fonction serverless : le tour en cours (`POST` publie, `GET` lit) et la liste des votants |
 | `api/vote.js` | fonction serverless : le pari d'un joueur, qui n'en ressort jamais |

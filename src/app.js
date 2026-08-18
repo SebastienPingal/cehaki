@@ -12,7 +12,7 @@ import { mix, formatDuration, toCsv } from "./mixer.js";
 import { runDiagnostic, summarize } from "./diagnostic.js";
 import { qrToSvg } from "./qr.js";
 import { generateCode, submitPlaylist, fetchSubmissions } from "./session.js";
-import { buildRound, sameRound, describeVoters, scoreVotes } from "./voting.js";
+import { buildRound, sameRound, describeVoters, scoreVotes, scoreRound, addRoundScores, rankBoard } from "./voting.js";
 import { publishRound, fetchRound, castVote } from "./party.js";
 
 const SOURCES_KEY = "spm.sources";
@@ -27,6 +27,9 @@ const VOTERS_POLL_MS = 3000;
 const VOTE_POLL_MS = 3000;
 const VOTE_NAME_KEY = "spm.voteName";
 const VOTE_HISTORY_KEY = "spm.voteHistory";
+const SCORES_KEY = "spm.scores";
+const SCORE_RULE_KEY = "spm.scoreRule";
+const LIVE_STATE_KEY = "spm.liveRound";
 const $ = (id) => document.getElementById(id);
 
 /** @type {Array<{key:string,id:string,label:string,name:string,owner:string,image:string,url:string,tracks:Array,status:string,error?:string}>} */
@@ -52,6 +55,10 @@ let votersTimer = null;
 let voteTimer = null;
 let voteRound = null;
 let voteHistory = {};
+/** Classement de la soirée en cours : { board: {nom: {points,right,votes}}, counted: [tours] }. */
+let scores = { board: {}, counted: [] };
+/** Classement publié par l'écran de soirée : c'est lui qui fait foi sur les téléphones. */
+let publishedBoard = null;
 
 /* ---------------------------------------------------------------- toasts */
 
@@ -602,8 +609,10 @@ function openLiveView(requestedId) {
 
 function selectMix(entry) {
   stopLive();
+  loadScores(sessionCode());
+  renderPartyBoard();
   liveEntry = entry;
-  liveSequence = 0;
+  restoreLiveState(liveStateKey(entry));
   publishedRound = null;
   liveNow = null;
   renderVoters([], null);
@@ -711,7 +720,6 @@ function stopLive() {
   if (!liveTimer) return;
   clearTimeout(liveTimer);
   liveTimer = null;
-  liveTrackId = null;
   liveNow = null;
   $("live-toggle").textContent = "Suivre la lecture";
   $("live-panel").classList.add("hidden");
@@ -801,7 +809,6 @@ function wireControls() {
   $("device-refresh").addEventListener("click", refreshDevices);
   $("ctl-start").addEventListener("click", () => {
     if (!liveEntry) return setCtlStatus("Choisis d'abord une playlist générée.", "ko");
-    liveSequence = 0;
     control(
       (options) => play({ ...options, playlistId: liveEntry.id, offset: 0 }),
       `« ${liveEntry.name} » démarre au premier morceau.`,
@@ -816,6 +823,110 @@ function wireControls() {
   $("ctl-prev").addEventListener("click", () => control(previousTrack, "Morceau précédent."));
   $("ctl-next").addEventListener("click", () => control(nextTrack, "Morceau suivant."));
   $("ctl-stop").addEventListener("click", () => control(stopPlayback, "Arrêté, morceau remis à son début."));
+}
+
+/* ---------------------------------------------------- tour en cours, gardé */
+
+/**
+ * Le tour en cours survit à un rafraîchissement de l'écran de soirée : sans ça,
+ * la page rouvrirait le morceau joué sous un nouvel identifiant, les votes déjà
+ * déposés seraient perdus et le morceau pourrait être compté deux fois.
+ */
+const liveStateKey = (entry) => `${sessionCode()}:${entry?.id || ""}`;
+
+function saveLiveState(code) {
+  let stored = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(LIVE_STATE_KEY) || "{}") || {};
+  } catch { /* stockage illisible : on repart dessus */ }
+  stored[code] = { sequence: liveSequence, trackId: liveTrackId, revealed };
+  localStorage.setItem(LIVE_STATE_KEY, JSON.stringify(stored));
+}
+
+function restoreLiveState(code) {
+  let state = null;
+  try {
+    state = JSON.parse(localStorage.getItem(LIVE_STATE_KEY) || "{}")?.[code] || null;
+  } catch { /* stockage illisible */ }
+  liveSequence = Number(state?.sequence) || 0;
+  liveTrackId = state?.trackId || null;
+  revealed = Boolean(state?.revealed);
+}
+
+/* ------------------------------------------------------------ classement */
+
+/** Le classement est rangé par session : une nouvelle soirée repart de zéro. */
+function loadScores(code) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SCORES_KEY) || "{}");
+    const own = stored?.[code];
+    scores = own && typeof own.board === "object"
+      ? { board: own.board, counted: Array.isArray(own.counted) ? own.counted : [] }
+      : { board: {}, counted: [] };
+  } catch {
+    scores = { board: {}, counted: [] };
+  }
+}
+
+function saveScores(code) {
+  let stored = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(SCORES_KEY) || "{}") || {};
+  } catch { /* stockage illisible : on repart dessus */ }
+  stored[code] = scores;
+  localStorage.setItem(SCORES_KEY, JSON.stringify(stored));
+}
+
+/**
+ * Compte les points d'un tour révélé, une seule fois. Les paris n'arrivent
+ * qu'après la révélation : avant, il n'y a rien à compter.
+ */
+function countRound(code, round, votes) {
+  if (!round?.revealed || !round.answer || !votes) return false;
+  if (scores.counted.includes(round.id)) return false;
+  scores = {
+    board: addRoundScores(scores.board, scoreRound(votes, round.answer, { bonus: round.bonus !== false })),
+    counted: [...scores.counted, round.id],
+  };
+  saveScores(code);
+  return true;
+}
+
+const MEDALS = ["🥇", "🥈", "🥉"];
+
+/** Dessine le classement dans une liste donnée. `highlight` met un joueur en avant. */
+function renderBoard(list, highlight = "", board = scores.board) {
+  const rows = rankBoard(board);
+  list.innerHTML = "";
+  for (const row of rows) {
+    const li = document.createElement("li");
+    li.className = `board-row${highlight && row.name.toLowerCase() === highlight.toLowerCase() ? " me" : ""}`;
+
+    const rank = document.createElement("span");
+    rank.className = "board-rank";
+    rank.textContent = row.rank <= 3 ? MEDALS[row.rank - 1] : `${row.rank}.`;
+
+    const name = document.createElement("span");
+    name.className = "board-name";
+    name.textContent = row.name;
+
+    const points = document.createElement("strong");
+    points.className = "board-points";
+    points.textContent = `${row.points} pt${row.points > 1 ? "s" : ""}`;
+
+    const detail = document.createElement("span");
+    detail.className = "board-detail";
+    detail.textContent = `${row.right}/${row.votes}`;
+
+    li.append(rank, name, points, detail);
+    list.append(li);
+  }
+  return rows.length;
+}
+
+function renderPartyBoard() {
+  const count = renderBoard($("score-board"));
+  $("score-empty").classList.toggle("hidden", count > 0);
 }
 
 /* ------------------------------------------------------------ les votes */
@@ -860,12 +971,18 @@ function renderVoters(voters, round) {
  */
 async function shareRound() {
   if (!liveEntry || !liveNow || !liveNow.known) return;
-  const round = buildRound({ entry: liveEntry, now: liveNow, sequence: liveSequence, revealed });
+  const round = buildRound({
+    entry: liveEntry, now: liveNow, sequence: liveSequence, revealed,
+    bonus: $("score-rule").value !== "simple",
+    board: scores.board,
+  });
   if (sameRound(round, publishedRound)) return;
   publishedRound = round;
+  saveLiveState(liveStateKey(liveEntry));
   try {
     const data = await publishRound(sessionCode(), round);
     renderVoters(data.voters, round);
+    if (round.revealed) pollVoters();
   } catch (error) {
     publishedRound = null;
     setVoteProgress(
@@ -877,11 +994,31 @@ async function shareRound() {
   }
 }
 
+/**
+ * Renvoie le tour en cours enrichi du classement : l'écran de soirée est le seul
+ * à voir tous les morceaux, c'est donc lui qui fait foi sur les téléphones.
+ */
+async function shareBoard() {
+  if (!publishedRound) return;
+  const round = { ...publishedRound, board: scores.board };
+  try {
+    const data = await publishRound(sessionCode(), round);
+    publishedRound = round;
+    renderVoters(data.voters, round);
+  } catch { /* le prochain tour republiera */ }
+}
+
 async function pollVoters() {
   if (!publishedRound) return;
+  const code = sessionCode();
   try {
-    const data = await fetchRound(sessionCode());
-    if (data.round && data.round.id === publishedRound.id) renderVoters(data.voters, publishedRound);
+    const data = await fetchRound(code);
+    if (!data.round || data.round.id !== publishedRound.id) return;
+    renderVoters(data.voters, publishedRound);
+    if (countRound(code, data.round, data.votes)) {
+      renderPartyBoard();
+      shareBoard();
+    }
   } catch {
     // Sondage silencieux : l'échec de publication a déjà son message.
   }
@@ -1008,6 +1145,13 @@ async function pollVote() {
       return;
     }
     renderVoteRound(voteRound);
+    // Le classement de l'organisateur fait foi ; à défaut, on compte ce qu'on a vu passer.
+    const shared = voteRound.board && Object.keys(voteRound.board).length > 0 ? voteRound.board : null;
+    const counted = countRound(code, voteRound, data.votes);
+    if (shared || counted) {
+      publishedBoard = shared;
+      renderVoteBoard();
+    }
   } catch (error) {
     setVoteFeedback(
       error.status === 503
@@ -1018,6 +1162,10 @@ async function pollVote() {
   }
 }
 
+function renderVoteBoard() {
+  renderBoard($("vote-board"), $("vote-name").value.trim(), publishedBoard || scores.board);
+}
+
 function openVoteView(params) {
   const party = params.get("jeu");
   $("vote-title-party").textContent = party
@@ -1026,7 +1174,9 @@ function openVoteView(params) {
   const known = params.get("n") || localStorage.getItem(VOTE_NAME_KEY) || "";
   if (known) $("vote-name").value = known;
   loadVoteHistory();
+  loadScores(voteSessionCode());
   renderVoteScore();
+  renderVoteBoard();
   startVotePolling();
 }
 
@@ -1231,13 +1381,27 @@ function wireEvents() {
   });
   $("vote-name").addEventListener("input", (event) => {
     localStorage.setItem(VOTE_NAME_KEY, event.target.value.trim());
+    renderVoteBoard();
   });
   $("vote-reset").addEventListener("click", () => {
     voteHistory = {};
     saveVoteHistory();
+    scores = { board: {}, counted: [] };
+    saveScores(voteSessionCode());
     renderVoteScore();
+    renderVoteBoard();
     if (voteRound) renderVoteRound(voteRound);
-    toast("Tes paris sont effacés.");
+    toast("Tes paris et le classement affiché sont effacés.");
+  });
+  $("score-rule").addEventListener("change", (event) => {
+    localStorage.setItem(SCORE_RULE_KEY, event.target.value);
+    toast("Barème appliqué à partir du prochain morceau révélé.");
+  });
+  $("score-reset").addEventListener("click", () => {
+    scores = { board: {}, counted: [] };
+    saveScores(sessionCode());
+    renderPartyBoard();
+    toast("Classement remis à zéro.");
   });
   $("live-auto-reveal").addEventListener("change", (event) => {
     if (event.target.checked) setRevealed(true);
@@ -1286,6 +1450,7 @@ async function start() {
     $(id).classList.toggle("hidden", !navigator.share);
   }
   loadVoteHistory();
+  $("score-rule").value = localStorage.getItem(SCORE_RULE_KEY) || "bonus";
   wireEvents();
 
   try {

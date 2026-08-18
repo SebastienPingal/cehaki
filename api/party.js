@@ -1,4 +1,4 @@
-import { isConfigured, setRound, getRound, listVoters } from "../lib/store.js";
+import { isConfigured, setRound, getRound, listVoters, listVotes } from "../lib/store.js";
 import { validateRound, CODE_PATTERN } from "../lib/validate.js";
 
 const send = (res, status, body) => res.status(status).json(body);
@@ -24,8 +24,14 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const round = await getRound(code);
-      const voters = round ? await listVoters(code, round.id) : [];
-      return send(res, 200, { code, round, voters });
+      if (!round) return send(res, 200, { code, round: null, voters: [] });
+      // Les paris ne sortent qu'une fois le morceau révélé : la réponse est alors
+      // publique, il n'y a plus rien à protéger — et l'écran de soirée peut compter.
+      if (round.revealed) {
+        const votes = await listVotes(code, round.id);
+        return send(res, 200, { code, round, voters: votes.map(({ name, at }) => ({ name, at })), votes });
+      }
+      return send(res, 200, { code, round, voters: await listVoters(code, round.id) });
     }
 
     if (req.method === "POST") {

@@ -11,7 +11,7 @@ const normalize = (name) => String(name || "").trim().toLowerCase();
  * @param {{id:string,title:string,artists:string,owner:string,position:number,total:number}} options.now morceau en cours
  * @param {number} options.sequence compteur de morceaux joués, pour distinguer deux passages du même titre
  */
-export function buildRound({ entry, now, sequence = 0, revealed = false }) {
+export function buildRound({ entry, now, sequence = 0, revealed = false, bonus = true, board = {} }) {
   const players = [];
   for (const source of entry?.sources || []) {
     const label = String(source.label || "").trim();
@@ -25,6 +25,8 @@ export function buildRound({ entry, now, sequence = 0, revealed = false }) {
     position: now.position || 0,
     total: now.total || 0,
     players,
+    board,
+    bonus,
     revealed,
     answer: revealed ? now.owner || "" : "",
   };
@@ -67,4 +69,54 @@ export function scoreVotes(history) {
   const judged = (history || []).filter((vote) => vote && vote.answer);
   const right = judged.filter((vote) => normalize(vote.guess) === normalize(vote.answer)).length;
   return { right, judged: judged.length, total: (history || []).length };
+}
+
+/* ------------------------------------------------------------ classement */
+
+/**
+ * Points d'un tour révélé.
+ * Barème « bonus » : 1 point par bonne réponse, 2 si un seul joueur a trouvé —
+ * c'est la règle annoncée sur la page d'accueil. Sinon, 1 point tout court.
+ * @param {Array<{name:string,guess:string}>} votes paris du tour
+ * @param {string} answer propriétaire du morceau
+ */
+export function scoreRound(votes, answer, { bonus = true } = {}) {
+  const target = normalize(answer);
+  const winners = (votes || []).filter((vote) => target && normalize(vote.guess) === target);
+  const points = bonus && winners.length === 1 ? 2 : 1;
+  return (votes || []).map((vote) => {
+    const right = winners.some((winner) => winner.name === vote.name);
+    return { name: vote.name, right, points: right ? points : 0 };
+  });
+}
+
+/** Cumule les points d'un tour dans le tableau général, sans le modifier. */
+export function addRoundScores(board, scores) {
+  const next = { ...(board || {}) };
+  for (const score of scores || []) {
+    const previous = next[score.name] || { points: 0, right: 0, votes: 0 };
+    next[score.name] = {
+      points: previous.points + score.points,
+      right: previous.right + (score.right ? 1 : 0),
+      votes: previous.votes + 1,
+    };
+  }
+  return next;
+}
+
+/**
+ * Classement affichable : le plus de points d'abord, puis le plus de bonnes
+ * réponses, puis l'ordre alphabétique. Deux joueurs à égalité partagent leur rang.
+ */
+export function rankBoard(board) {
+  const rows = Object.entries(board || {})
+    .map(([name, stats]) => ({ name, ...stats }))
+    .sort((a, b) => b.points - a.points || b.right - a.right || a.name.localeCompare(b.name, "fr"));
+  let rank = 0;
+  let previous = null;
+  return rows.map((row, index) => {
+    if (!previous || row.points !== previous.points || row.right !== previous.right) rank = index + 1;
+    previous = row;
+    return { ...row, rank };
+  });
 }

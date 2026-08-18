@@ -332,6 +332,26 @@
   </section>
 
   <section class="card">
+    <h2>Le classement</h2>
+    <p class="hint">
+      Les points sont comptés à chaque morceau <strong>révélé</strong> : avant la révélation, les paris
+      restent secrets. Le classement se garde dans ce navigateur — il survit à un rafraîchissement.
+    </p>
+    <div class="row">
+      <label class="field grow">
+        <span>Barème</span>
+        <select id="score-rule">
+          <option value="bonus">1 point par bonne réponse, 2 si personne d'autre n'a trouvé</option>
+          <option value="simple">1 point par bonne réponse</option>
+        </select>
+      </label>
+      <button id="score-reset" class="btn btn-ghost">Remettre à zéro</button>
+    </div>
+    <ol id="score-board" class="board"></ol>
+    <p id="score-empty" class="hint">Aucun morceau révélé pour l'instant : le classement s'ouvrira au premier.</p>
+  </section>
+
+  <section class="card">
     <h2>Le corrigé</h2>
     <div class="actions">
       <button id="live-toggle-answers" class="btn btn-ghost">Afficher les réponses</button>
@@ -376,7 +396,8 @@
   </section>
 
   <section class="card">
-    <h2>Ton tableau de chasse</h2>
+    <h2>Le classement</h2>
+    <ol id="vote-board" class="board"></ol>
     <p id="vote-score" class="feedback">Aucun morceau révélé pour l'instant.</p>
     <div class="actions">
       <button id="vote-reset" class="btn btn-ghost">Repartir de zéro</button>

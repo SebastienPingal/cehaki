@@ -4,6 +4,7 @@ import {
 } from "./auth.js";
 import { parsePlaylistId, fetchPlaylist, getCurrentUser, createPlaylist } from "./spotify.js";
 import { mix, formatDuration, toCsv } from "./mixer.js";
+import { runDiagnostic, summarize } from "./diagnostic.js";
 
 const SOURCES_KEY = "spm.sources";
 const $ = (id) => document.getElementById(id);
@@ -267,6 +268,50 @@ function handleDownloadCsv() {
   URL.revokeObjectURL(link.href);
 }
 
+/* ------------------------------------------------------------ diagnostic */
+
+async function handleDiagnostic() {
+  if (!isLoggedIn()) {
+    toast("Connecte-toi à Spotify d'abord.", true);
+    return;
+  }
+  const button = $("diag-run");
+  const list = $("diag-results");
+  const verdict = $("diag-verdict");
+  button.disabled = true;
+  button.textContent = "Test en cours…";
+  list.innerHTML = "";
+  verdict.classList.add("hidden");
+
+  try {
+    const foreignId = parsePlaylistId($("diag-foreign").value || "");
+    const results = await runDiagnostic(foreignId);
+    for (const result of results) {
+      const li = document.createElement("li");
+      li.className = result.ok ? "ok" : "ko";
+      const mark = document.createElement("span");
+      mark.className = "mark";
+      mark.textContent = result.ok ? "✅" : "❌";
+      const text = document.createElement("span");
+      text.innerHTML = "";
+      text.append(result.label, " — ");
+      const detail = document.createElement("span");
+      detail.className = "detail";
+      detail.textContent = result.detail;
+      text.append(detail);
+      li.append(mark, text);
+      list.append(li);
+    }
+    verdict.textContent = summarize(results);
+    verdict.classList.remove("hidden");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Lancer le diagnostic";
+  }
+}
+
 /* ------------------------------------------------------------- démarrage */
 
 async function refreshUser() {
@@ -312,6 +357,7 @@ function wireEvents() {
     $("duration-field").classList.toggle("hidden", !isDuration);
     $("count-field").classList.toggle("hidden", isDuration);
   });
+  $("diag-run").addEventListener("click", handleDiagnostic);
   $("mix-btn").addEventListener("click", handleMix);
   $("create-btn").addEventListener("click", handleCreate);
   $("download-csv").addEventListener("click", handleDownloadCsv);

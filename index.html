@@ -43,6 +43,24 @@
       </label>
       <button id="copy-redirect" class="btn btn-ghost">Copier</button>
     </div>
+
+    <details class="diag">
+      <summary>Diagnostic — qu'est-ce que mon app a le droit de faire&nbsp;?</summary>
+      <p class="hint">
+        Depuis 2026, une app Spotify en « mode développement » ne peut lire le contenu que des playlists
+        dont tu es propriétaire ou collaborateur. Ce test le vérifie sur ton compte, en une dizaine de secondes.
+        Il crée une playlist de test puis la retire aussitôt.
+      </p>
+      <div class="row">
+        <label class="field grow">
+          <span>Lien d'une playlist publique de quelqu'un d'autre (le point décisif)</span>
+          <input id="diag-foreign" type="text" placeholder="https://open.spotify.com/playlist/…" />
+        </label>
+        <button id="diag-run" class="btn btn-ghost">Lancer le diagnostic</button>
+      </div>
+      <ul id="diag-results" class="diag-results"></ul>
+      <p id="diag-verdict" class="verdict hidden"></p>
+    </details>
   </section>
 
   <!-- ÉTAPE 1 : sources -->

@@ -2,7 +2,7 @@ import { getAccessToken } from "./auth.js";
 
 const API = "https://api.spotify.com/v1";
 
-async function api(path, options = {}, attempt = 0) {
+export async function api(path, options = {}, attempt = 0) {
   const token = await getAccessToken();
   const response = await fetch(path.startsWith("http") ? path : API + path, {
     ...options,

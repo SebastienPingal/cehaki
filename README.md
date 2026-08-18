@@ -43,6 +43,10 @@ Une app Spotify neuve démarre en **Development Mode**, et Spotify l'a nettement
 Le *Extended Quota Mode*, qui lève tout ça, n'est plus accordé qu'à des entités commerciales
 enregistrées d'au moins 250 000 utilisateurs mensuels — hors de portée d'un projet perso.
 
+La page inclut un **diagnostic** (section 0, « qu'est-ce que mon app a le droit de faire ? ») qui teste
+ces limites sur ton propre compte : lecture de tes playlists, lecture d'une playlist d'autrui, création,
+ajout de morceaux. En dix secondes tu sais si tu dois passer par une copie manuelle ou non.
+
 **Conséquence pratique** : ne demande pas aux joueurs le lien de leur playlist. Crée à la place une
 playlist **collaborative** par joueur depuis ton propre compte, envoie-leur le lien, et laisse-les y
 déposer leurs morceaux. Les playlists t'appartiennent, l'app peut donc les lire, et les joueurs n'ont
@@ -82,6 +86,7 @@ Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
 | `src/auth.js` | OAuth Spotify en **Authorization Code + PKCE** (aucun secret, tout dans le navigateur) |
 | `src/spotify.js` | appels Web API (endpoints `/items` et `/me/playlists` post-migration 2026) : lecture paginée, création, ajout par lots de 100 |
 | `src/mixer.js` | logique pure du mélange (quotas pondérés, anti-répétition, doublons) |
+| `src/diagnostic.js` | teste une à une les permissions réelles de l'app Spotify |
 | `src/app.js` | glue UI |
 | `test/mixer.test.mjs` | tests de `mixer.js` (`node --test`) |
 

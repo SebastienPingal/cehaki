@@ -170,3 +170,20 @@ tbody tr:hover { background: var(--panel-2); }
 .toast.error { border-color: var(--danger); color: #ffd7da; }
 
 .hidden { display: none !important; }
+
+.diag { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .9rem; }
+.diag summary { cursor: pointer; font-size: .875rem; font-weight: 600; }
+.diag summary:hover { color: var(--accent); }
+.diag-results { list-style: none; margin: .9rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+.diag-results li { font-size: .85rem; display: flex; gap: .5rem; align-items: baseline; }
+.diag-results .mark { flex: none; }
+.diag-results .detail { color: var(--muted); }
+.diag-results li.ko .detail { color: #ffc4c9; }
+.verdict {
+  margin-top: .9rem;
+  padding: .7rem .9rem;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-size: .875rem;
+}

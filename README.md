@@ -38,7 +38,13 @@ Une app Spotify neuve démarre en **Development Mode**, et Spotify l'a nettement
 - le propriétaire de l'app doit avoir un abonnement **Premium actif** ;
 - **5 utilisateurs** maximum, à déclarer un par un dans *User Management* ;
 - surtout : le contenu d'une playlist n'est lisible que si l'utilisateur connecté en est
-  **propriétaire ou collaborateur**. Les playlists des autres ne renvoient que leurs métadonnées.
+  **propriétaire ou collaborateur**. La doc de [Get Playlist][doc] le dit noir sur blanc à propos du
+  champ `items` : *« This field is only available for playlists owned by the current user or playlists
+  the user is a collaborator of. »* Le statut public/privé n'y change rien — c'est un réglage de
+  visibilité dans l'appli, pas une permission d'API. Les playlists des autres ne renvoient que leurs
+  métadonnées (nom, propriétaire, pochette).
+
+[doc]: https://developer.spotify.com/documentation/web-api/reference/get-playlist
 
 Le *Extended Quota Mode*, qui lève tout ça, n'est plus accordé qu'à des entités commerciales
 enregistrées d'au moins 250 000 utilisateurs mensuels — hors de portée d'un projet perso.

@@ -23,8 +23,8 @@ export async function api(path, options = {}, attempt = 0) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    // Depuis mars 2026, les apps en « Development Mode » ne peuvent lire le contenu
-    // que des playlists dont l'utilisateur connecté est propriétaire ou collaborateur.
+    // Le champ `items` d'une playlist n'est renvoyé que si l'utilisateur connecté en est
+    // propriétaire ou collaborateur (cf. doc Get Playlist) — public/privé n'y change rien.
     if (response.status === 403) {
       throw new Error(
         data?.error?.message

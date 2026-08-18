@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Playlist Mixer — devine à qui est la chanson</title>
+<meta name="description" content="Mélange plusieurs playlists Spotify publiques en une seule playlist de jeu." />
+<link rel="stylesheet" href="./src/styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">🎧</span> <strong>Playlist Mixer</strong></div>
+  <div class="auth" id="auth-zone">
+    <span id="user-badge" class="badge hidden"></span>
+    <button id="login-btn" class="btn btn-primary">Se connecter à Spotify</button>
+    <button id="logout-btn" class="btn btn-ghost hidden">Déconnexion</button>
+  </div>
+</header>
+
+<main>
+  <p class="intro">
+    Chaque joueur crée une playlist publique de son top&nbsp;100. Tu colles les liens ici, l'app fabrique
+    une playlist mélangée dans ton compte Spotify&nbsp;: on la lance, et on devine à qui appartient chaque morceau.
+  </p>
+
+  <!-- ÉTAPE 0 : config -->
+  <section class="card" id="config-card">
+    <h2>0. Ton application Spotify</h2>
+    <p class="hint">
+      Crée une app gratuite sur le
+      <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">dashboard développeur Spotify</a>,
+      ajoute l'URL de redirection ci-dessous, puis colle le <em>Client ID</em>. Il reste dans ton navigateur, rien n'est envoyé ailleurs.
+    </p>
+    <div class="row">
+      <label class="field grow">
+        <span>Client ID</span>
+        <input id="client-id" type="text" placeholder="ex. 4f9c1a…" autocomplete="off" spellcheck="false" />
+      </label>
+      <label class="field grow">
+        <span>Redirect URI à copier dans le dashboard</span>
+        <input id="redirect-uri" type="text" readonly />
+      </label>
+      <button id="copy-redirect" class="btn btn-ghost">Copier</button>
+    </div>
+  </section>
+
+  <!-- ÉTAPE 1 : sources -->
+  <section class="card">
+    <h2>1. Les playlists des joueurs</h2>
+    <div class="row">
+      <label class="field grow">
+        <span>Lien(s) de playlist Spotify — un par ligne, on peut en coller plusieurs d'un coup</span>
+        <textarea id="playlist-input" rows="3" placeholder="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M&#10;spotify:playlist:1BxfuPKGuaTgP7aM0Bbdwr"></textarea>
+      </label>
+      <button id="add-playlists" class="btn btn-primary">Ajouter</button>
+    </div>
+    <ul id="sources" class="sources"></ul>
+    <p id="sources-empty" class="hint">Aucune playlist pour l'instant.</p>
+  </section>
+
+  <!-- ÉTAPE 2 : réglages -->
+  <section class="card">
+    <h2>2. Réglages du mix</h2>
+    <div class="grid">
+      <label class="field">
+        <span>Limite</span>
+        <select id="mode">
+          <option value="count">Nombre de morceaux</option>
+          <option value="duration">Durée totale</option>
+        </select>
+      </label>
+      <label class="field" id="count-field">
+        <span>Nombre de morceaux</span>
+        <input id="target-count" type="number" min="1" max="500" value="60" />
+      </label>
+      <label class="field hidden" id="duration-field">
+        <span>Durée (minutes)</span>
+        <input id="target-duration" type="number" min="1" max="600" value="90" />
+      </label>
+      <label class="field">
+        <span>Répartition</span>
+        <select id="balance">
+          <option value="equal">Équitable — autant de morceaux par joueur</option>
+          <option value="proportional">Proportionnelle à la taille des playlists</option>
+        </select>
+      </label>
+      <label class="field checkbox">
+        <input id="dedupe" type="checkbox" checked />
+        <span>Retirer les morceaux présents dans plusieurs playlists <em>(recommandé : ils sont indevinables)</em></span>
+      </label>
+      <label class="field checkbox">
+        <input id="spread" type="checkbox" checked />
+        <span>Éviter deux morceaux du même joueur à la suite</span>
+      </label>
+      <label class="field">
+        <span>Nom de la playlist créée</span>
+        <input id="playlist-name" type="text" placeholder="Blind test — soirée du 12" />
+      </label>
+      <label class="field checkbox">
+        <input id="public-playlist" type="checkbox" />
+        <span>Playlist publique <em>(sinon privée, visible seulement par toi)</em></span>
+      </label>
+    </div>
+    <div class="actions">
+      <button id="mix-btn" class="btn btn-primary" disabled>Mélanger</button>
+      <button id="create-btn" class="btn btn-primary hidden">Créer la playlist sur Spotify</button>
+      <span id="mix-summary" class="summary"></span>
+    </div>
+  </section>
+
+  <!-- ÉTAPE 3 : résultat -->
+  <section class="card hidden" id="result-card">
+    <h2>3. Le corrigé</h2>
+    <p class="hint">Ne le montre pas aux joueurs. L'ordre ci-dessous est exactement celui de la playlist.</p>
+    <div class="actions">
+      <button id="toggle-answers" class="btn btn-ghost">Masquer les réponses</button>
+      <button id="download-csv" class="btn btn-ghost">Télécharger le corrigé (CSV)</button>
+      <a id="playlist-link" class="btn btn-primary hidden" target="_blank" rel="noopener">Ouvrir la playlist</a>
+    </div>
+    <div class="table-wrap">
+      <table id="result-table">
+        <thead><tr><th>#</th><th>Titre</th><th>Artiste</th><th>Durée</th><th class="answer">Joueur</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+<script type="module" src="./src/app.js"></script>
+</body>
+</html>

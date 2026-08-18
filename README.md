@@ -1,0 +1,86 @@
+# 🎧 Playlist Mixer
+
+Une page unique, sans serveur, qui **mélange plusieurs playlists Spotify publiques** en une seule
+playlist créée dans ton compte.
+
+Le jeu : chaque joueur fait une playlist publique de son top 100. On mixe tout, on lance la playlist,
+et on devine **à qui appartient chaque morceau**. L'app garde le corrigé de son côté.
+
+## Ce que ça fait
+
+- Ajout de playlists par lien (`open.spotify.com/playlist/…` ou `spotify:playlist:…`), plusieurs d'un coup.
+- Chaque playlist est étiquetée avec un **nom de joueur** modifiable.
+- Limite au choix : **nombre de morceaux** ou **durée totale**.
+- Répartition **équitable** (autant de morceaux par joueur, même si les playlists ont des tailles différentes)
+  ou **proportionnelle** à la taille des playlists.
+- Les morceaux présents dans **plusieurs** playlists sont écartés par défaut : ils sont indevinables.
+- Deux morceaux du même joueur ne se suivent pas (dans la mesure où les quotas le permettent).
+- Création de la playlist dans ton compte Spotify, publique ou privée.
+- **Corrigé** consultable, masquable et exportable en CSV.
+
+## Mise en route (5 minutes)
+
+1. Va sur le [dashboard développeur Spotify](https://developer.spotify.com/dashboard) → *Create app*.
+   Un compte Spotify gratuit suffit.
+2. Dans les réglages de l'app, ajoute la **Redirect URI** correspondant à l'endroit où tu ouvres la page :
+   - GitHub Pages : `https://<ton-pseudo>.github.io/spotify-playlist-mixer/`
+   - en local : `http://127.0.0.1:4173/`
+
+   Coche *Web API* comme API utilisée.
+3. Copie le **Client ID** de l'app et colle-le dans le champ prévu sur la page. Il est stocké dans
+   ton navigateur uniquement.
+4. Clique sur **Se connecter à Spotify**, puis ajoute les playlists.
+
+> **Mode développement Spotify** : tant que l'app n'est pas passée en mode étendu, seuls les comptes
+> que tu ajoutes dans *User Management* peuvent se connecter. Comme c'est toi qui crées la playlist,
+> ton propre compte suffit — les autres joueurs n'ont rien à installer, ils fournissent juste le lien
+> de leur playlist **publique**.
+
+### En local
+
+```bash
+npm run dev     # sert la page sur http://127.0.0.1:4173/
+npm test        # tests de la logique de mélange
+```
+
+Aucune dépendance, aucun build : du HTML/CSS/JS modules servis tels quels.
+
+### Publier sur GitHub Pages
+
+*Settings → Pages → Source : GitHub Actions*. Le workflow `.github/workflows/pages.yml` déploie à
+chaque push sur `main`. Pense à ajouter l'URL publiée comme Redirect URI dans le dashboard Spotify.
+
+## Comment se déroule une partie
+
+1. Chaque joueur crée sa playlist et la passe en **publique**, puis envoie le lien.
+2. Tu ajoutes les liens, tu nommes chaque source avec le prénom du joueur.
+3. Tu choisis 60 morceaux (ou 90 minutes), répartition équitable, et tu mixes.
+4. Tu crées la playlist, tu la lances **sans lecture aléatoire** (l'ordre est déjà mélangé, et le
+   corrigé suit cet ordre).
+5. À chaque morceau, chacun écrit son pari. Le corrigé CSV sert de feuille de score.
+
+Variante : 1 point par bonne réponse, 2 points si personne d'autre ne trouve.
+
+## Sous le capot
+
+| Fichier | Rôle |
+|---|---|
+| `index.html` | la page entière |
+| `src/auth.js` | OAuth Spotify en **Authorization Code + PKCE** (aucun secret, tout dans le navigateur) |
+| `src/spotify.js` | appels Web API : lecture des playlists (pagination), création, ajout par lots de 100 |
+| `src/mixer.js` | logique pure du mélange (quotas pondérés, anti-répétition, doublons) |
+| `src/app.js` | glue UI |
+| `test/mixer.test.mjs` | tests de `mixer.js` (`node --test`) |
+
+Le mélange utilise une file d'attente pondérée : chaque joueur annonce la « date » de son prochain
+morceau — `(déjà pris + 1) / poids` — et le plus tôt passe. Les quotas sont donc respectés à tout
+moment de la playlist, pas seulement à la fin, ce qui permet de couper où on veut.
+
+## Vie privée
+
+Aucun serveur, aucune donnée envoyée ailleurs que chez Spotify. Le Client ID, les jetons et la liste
+des playlists restent dans le `localStorage` de ton navigateur.
+
+## Licence
+
+MIT
